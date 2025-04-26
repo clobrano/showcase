@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
 # -*- coding: UTF-8 -*-
-: "${SC_PROMPT:="$ "}"
+: "${SC_PROMPT:="[showcase user] $ "}"
 : "${SC_SPEED:=10}"
+
+main() {
+    local sc_script=$1
+    clear
+    run "$sc_script"
+}
 
 init() {
     echo -n "$SC_PROMPT"
-    sleep 1
 }
 
 slowtype() {
     local text="$1"
     local prompt_at_the_end=${2:-1}
-    echo "$text" | pv -qL "$SC_SPEED"
+    if [ ${#text} == 0 ]; then
+        echo
+    else
+        # Add the hashtag at the beginning of the line
+        echo "$text" | pv -qL "$SC_SPEED"
+    fi
     if [ "$prompt_at_the_end" -eq 1 ]; then
         echo -n "$SC_PROMPT"
         sleep 1
@@ -35,27 +45,32 @@ run() {
 
     for line in "${lines[@]}"; do
         line=$(envsubst <<< "$line")
+        if [[ "$line" == \!\ * ]]; then
+            # consider lines starting with exclamation mark as command to execute silently
+            eval "${line#"! "}"
+            if [[ "$line" =~ "SC_SPEED" ]]; then
+                init
+            fi
+            continue
+        fi
         if [[ "$line" == \$\ * ]]; then
             # lines starting with $ sign are commands to type and execute
             slowtype_and_run "${line#"$ "}"
             continue
         fi
-        if [[ "$line" == \!\ * ]]; then
-            # consider lines starting with exclamation mark as command to execute silently
-            eval ${line#"! "}
-            continue
-        fi
-        if [[ "$line" == \?* ]]; then
+        if [[ "$line" == \\//?* ]]; then
             # consider lines starting with slash as comments to ignore
             continue
         fi
-        # all the rest is text to type only
-        slowtype "$line"
+        if [[ "$line" == \#\ * ]]; then
+            # lines starting with # sign are text to type only
+            slowtype "$line"
+            continue
+        fi
+        # all the rest is ignored
     done < "$filepath"
     slowtype "" 0
 }
 
 # MAIN
-clear
-init
-run $1
+main "$1"

@@ -1,0 +1,51 @@
+! export SC_PROMPT="[showcase demo] $ "   # Set the custom prompt (default is [showcase user]). Set this as first.
+! export SC_SPEED=25                      # Set the typing speed (default=10 is slow)
+
+# Welcome to the Showcase Demo!
+
+# This tool lets you create really engaging demos by simulating real-time typing. Check this out:
+# Any line of text, like this one, that starts with a hashtag...
+# ...will appear on the screen as if I'm typing it live. Pretty neat, right?
+
+# But it gets better! We can also execute commands *within* the demo.
+# Let's try that.
+# Lines starting with a dollar sign "$" are treated as commands.
+# The command itself is displayed, just like you'd type it in your terminal...
+
+$ ls -l  # Listing files with details
+
+# ...and then, boom! The output appears.
+
+# See how that works? It's great for showing command-line tools in action.
+! sleep 1
+
+# Now, for the magic behind the scenes...
+
+# Sometimes, you need to set things up *without* cluttering the demo.
+# That's where lines starting with an exclamation mark "!" come in.
+# These are *silent commands*. They execute immediately, but their output is hidden.
+
+! echo "Hello World" > helloworld.txt  # Creating a file silently
+
+# You didn't see anything happen, but trust me, it did.
+# Let's prove it.
+
+$ ls -l  # Listing files again
+
+# See that new `helloworld.txt` file? It was created by the silent command.
+! sleep 1
+
+# And just to wrap things up:
+
+$ cat helloworld.txt  # Showing the file's contents
+
+# There's our "Hello World!"
+
+# Finally, let's clean up.
+
+$ rm helloworld.txt  # Removing the file
+$ ls -l
+
+# And that's it! A quick demo showing how you can combine simulated typing with real and silent commands.
+
+# This makes demos easier for you to script, and much more dynamic and easier to follow.
