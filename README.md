@@ -2,7 +2,7 @@
 
 This tool simplifies the creation of engaging and repeatable software demonstrations by simulating real-time typing from a script.
 
-[Watch the demo](https://youtu.be/6XgSoUAdDAo)
+[Watch the demo](https://youtu.be/nu-qY67qPzM)
 
 ## Key Features
 
