@@ -2,6 +2,8 @@
 
 This tool simplifies the creation of engaging and repeatable software demonstrations by simulating real-time typing from a script.
 
+[Watch the demo](https://youtu.be/6XgSoUAdDAo)
+
 ## Key Features
 
 * **Script-Driven Demos:** Create demos by writing a simple script. Lines in the script are "typed" out as if a user were entering them.
