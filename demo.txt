@@ -1,14 +1,16 @@
 ! export SC_PROMPT="[showcase demo] $ "   # Set the custom prompt (default is [showcase user]). Set this as first.
-! export SC_SPEED=25                      # Set the typing speed (default=10 is slow)
-
+! export SC_SPEED=15                      # Set the typing speed (default=10 is slow)
+! sleep 1
 # Welcome to the Showcase Demo!
-
-# This tool lets you create really engaging demos by simulating real-time typing. Check this out:
+! sleep 1
+# This tool lets you create really engaging demos by simulating real-time typing.
 # Any line of text, like this one, that starts with a hashtag...
 # ...will appear on the screen as if I'm typing it live. Pretty neat, right?
 
 # But it gets better! We can also execute commands *within* the demo.
 # Let's try that.
+! sleep 1
+
 # Lines starting with a dollar sign "$" are treated as commands.
 # The command itself is displayed, just like you'd type it in your terminal...
 
