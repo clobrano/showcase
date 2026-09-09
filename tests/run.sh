@@ -231,6 +231,24 @@ EOF
         "$out" $'PROMPT> \nPROMPT> # AFTER_BLANK'
 }
 
+test_empty_line_before_prompt_setup_emits_no_stray_prompt() {
+    # A blank line that appears before the prompt is configured must not
+    # print a stray default prompt (regression: it used to emit the default
+    # "[showcase user] $" right before the custom prompt was set up).
+    local out
+    out="$(run_script <<'EOF'
+
+! export SC_PROMPT="CUSTOM_ONLY> "
+! export SC_SPEED=1000000
+# HELLO_TOKEN
+EOF
+)"
+    assert_not_contains "blank line before setup prints no default prompt" \
+        "$out" "[showcase user]"
+    assert_contains "custom prompt appears once configured" \
+        "$out" "CUSTOM_ONLY>"
+}
+
 test_custom_prompt_is_used() {
     local out
     SC_PROMPT="CUSTOM_PROMPT_TOKEN> "
@@ -272,6 +290,7 @@ test_dollar_multiline_command_is_joined_and_executed
 test_silent_multiline_command_side_effect_runs
 test_multiline_command_does_not_consume_following_lines
 test_empty_line_prints_blank_line
+test_empty_line_before_prompt_setup_emits_no_stray_prompt
 test_custom_prompt_is_used
 test_envsubst_expands_variables
 
