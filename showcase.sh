@@ -13,6 +13,17 @@ init() {
     echo -n "$SC_PROMPT"
 }
 
+# Render stdin with a typing effect. Uses `pv` to animate output at
+# SC_SPEED when it is available, and falls back to plain output otherwise
+# so the tool still works (just without the animation) on minimal systems.
+type_effect() {
+    if command -v pv >/dev/null 2>&1; then
+        pv -qL "$SC_SPEED"
+    else
+        cat
+    fi
+}
+
 slowtype() {
     local text="$1"
     local prompt_at_the_end=${2:-1}
@@ -20,7 +31,7 @@ slowtype() {
         echo
     else
         # Add the hashtag at the beginning of the line
-        echo "$text" | pv -qL "$SC_SPEED"
+        echo "$text" | type_effect
     fi
     if [ "$prompt_at_the_end" -eq 1 ]; then
         echo -n "$SC_PROMPT"
@@ -39,15 +50,22 @@ slowtype_and_run() {
 
 run() {
     local filepath=$1
-    # do not loop over the file rows in the loop, otherwise, for
-    # unknown reasons, the first ssh command will break the loop
     mapfile -t lines < "$filepath"  # Read all lines into the array 'lines'
 
+    # Iterate over the pre-read array (not the file via the loop's stdin), so
+    # commands that consume stdin (e.g. ssh) can't swallow the rest of the
+    # script. This is why the lines are read up-front with mapfile above.
     for line in "${lines[@]}"; do
-        line=$(envsubst <<< "$line")
+        # Expand environment variables in the line when envsubst is
+        # available; otherwise leave the line untouched.
+        if command -v envsubst >/dev/null 2>&1; then
+            line=$(envsubst <<< "$line")
+        fi
         if [[ "$line" == \!\ * ]]; then
-            # consider lines starting with exclamation mark as command to execute silently
-            eval "${line#"! "}"
+            # Lines starting with an exclamation mark are commands run for
+            # their side effects only: stdout is suppressed to keep the demo
+            # clean (stderr is kept so real failures still surface).
+            eval "${line#"! "}" >/dev/null
             if [[ "$line" =~ "SC_SPEED" ]]; then
                 init
             fi
@@ -58,8 +76,8 @@ run() {
             slowtype_and_run "${line#"$ "}"
             continue
         fi
-        if [[ "$line" == \\//?* ]]; then
-            # consider lines starting with slash as comments to ignore
+        if [[ "$line" == //* ]]; then
+            # lines starting with // are comments and are ignored
             continue
         fi
         if [[ "$line" == \#\ * ]]; then
@@ -68,9 +86,14 @@ run() {
             continue
         fi
         # all the rest is ignored
-    done < "$filepath"
+    done
     slowtype "" 0
 }
 
 # MAIN
-main "$1"
+# Only run automatically when executed directly. When the script is sourced
+# (e.g. by the test suite) this guard keeps `main` from running so individual
+# functions can be exercised in isolation.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$1"
+fi
