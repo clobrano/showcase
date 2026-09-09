@@ -249,6 +249,48 @@ EOF
         "$out" "CUSTOM_ONLY>"
 }
 
+test_backslash_continuation_tolerates_trailing_whitespace() {
+    # A stray space after a continuation backslash ("cmd \ ") must not break
+    # the join. Regression: the old check only matched a backslash at the very
+    # end of the line, so trailing whitespace dropped the continuation and the
+    # shell read "\ " as an escaped space (mangling or hanging the command).
+    # The output token (QQQ) never appears in the typed command, so finding it
+    # proves the joined command actually ran.
+    local f out
+    f="$(mktemp)"
+    # NOTE: the first line intentionally ends with a backslash + a space.
+    printf '%s\n%s\n' "\$ printf 'zzz' | \\ " "  tr 'z' 'Q'" >"$f"
+    out="$(run "$f" </dev/null 2>&1)"
+    rm -f "$f"
+    assert_contains "trailing whitespace after '\\' still continues the command" \
+        "$out" "QQQ"
+}
+
+test_trailing_pipe_continues_command() {
+    # A line ending in a pipe continues onto the next line, exactly like an
+    # interactive shell, even without a trailing backslash.
+    local out
+    out="$(run_script <<'EOF'
+$ printf 'zzz' |
+  tr 'z' 'Q'
+EOF
+)"
+    assert_contains "a line ending in '|' continues onto the next line" \
+        "$out" "QQQ"
+}
+
+test_trailing_logical_operator_continues_command() {
+    # A line ending in '&&' (or '||') also continues onto the next line.
+    local out
+    out="$(run_script <<'EOF'
+$ printf 'aa' &&
+  printf 'bb'
+EOF
+)"
+    assert_contains "a line ending in '&&' continues onto the next line" \
+        "$out" "aabb"
+}
+
 test_custom_prompt_is_used() {
     local out
     SC_PROMPT="CUSTOM_PROMPT_TOKEN> "
@@ -291,6 +333,9 @@ test_silent_multiline_command_side_effect_runs
 test_multiline_command_does_not_consume_following_lines
 test_empty_line_prints_blank_line
 test_empty_line_before_prompt_setup_emits_no_stray_prompt
+test_backslash_continuation_tolerates_trailing_whitespace
+test_trailing_pipe_continues_command
+test_trailing_logical_operator_continues_command
 test_custom_prompt_is_used
 test_envsubst_expands_variables
 

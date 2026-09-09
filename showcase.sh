@@ -66,6 +66,17 @@ expand_vars() {
     fi
 }
 
+# Decide whether a (possibly multi-line) command continues onto the next
+# physical line, exactly like an interactive shell would. A command continues
+# when its last non-whitespace token is a line-continuation backslash "\" or a
+# trailing pipe "|" / logical operator "&&" / "||". Trailing whitespace after
+# that token is ignored, so a stray space (a very common, invisible mistake,
+# especially after a pipe) doesn't break the continuation.
+line_continues() {
+    local re='(\\|\||&&)[[:space:]]*$'
+    [[ "$1" =~ $re ]]
+}
+
 run() {
     local filepath=$1
     prompt_shown=0
@@ -87,10 +98,17 @@ run() {
             \!\ *|\$\ *)
                 # Command lines: '!' runs silently (for setup/teardown), '$'
                 # is typed out and executed live. Either may span several
-                # physical lines, each continued with a trailing backslash
-                # (just like a shell), so gather those lines into one command.
+                # physical lines, continued either with a trailing backslash or
+                # by ending on a pipe/logical operator (just like a shell), so
+                # gather those lines into one command.
                 cmd="$line"
-                while [[ "$cmd" == *\\ ]] && (( i + 1 < n )); do
+                while (( i + 1 < n )) && line_continues "$cmd"; do
+                    # Drop any trailing whitespace before joining the next
+                    # line. Without this, a stray space after a continuation
+                    # backslash ("\ ") would be read by the shell as an escaped
+                    # space rather than a line continuation, mangling (or
+                    # hanging) the command.
+                    cmd="${cmd%"${cmd##*[![:space:]]}"}"
                     (( i++ ))
                     cmd+=$'\n'$(expand_vars "${lines[i]}")
                 done

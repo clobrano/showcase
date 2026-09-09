@@ -38,9 +38,12 @@ On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
 
 ### Multiline commands
 
-A command line (`$` or `!`) that ends with a backslash (`\`) continues onto
-the following lines, exactly like in a shell. The lines are joined into a
-single command that is displayed (for `$`) as written — backslashes and all —
+A command line (`$` or `!`) continues onto the following lines exactly like in
+a shell: when it ends with a backslash (`\`), or when it ends with a pipe
+(`|`) or a logical operator (`&&`, `||`). Any stray trailing whitespace after
+the continuation character is ignored, so an invisible space after a `\` (a
+common editing mistake, especially after a pipe) won't break the command. The
+lines are joined into a single command that is displayed (for `$`) as written
 and then executed as one:
 
 ```
