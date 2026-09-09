@@ -35,6 +35,21 @@ On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
 * `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any line that does not start with one of the markers above is also ignored.)
 
+### Multiline commands
+
+A command line (`$` or `!`) that ends with a backslash (`\`) continues onto
+the following lines, exactly like in a shell. The lines are joined into a
+single command that is displayed (for `$`) as written — backslashes and all —
+and then executed as one:
+
+```
+$ osac create computeinstance \
+    --name default-vm \
+    --catalog-item ${CI_ID1} \
+    --network-attachment subnet=${SUBNET_ID} && \
+  osac get computeinstance default-vm --watch
+```
+
 ## Configuration
 
 You can customize the demo's behavior using environment variables:
@@ -67,6 +82,7 @@ A self-contained test suite (pure bash, no external framework needed) lives in
 ```
 
 It sources `showcase.sh` and exercises each line type (`#`, `$`, `!`, `//`),
-prompt configuration, and variable expansion. The suite runs even without `pv`
+multiline (backslash-continued) commands, prompt configuration, and variable
+expansion. The suite runs even without `pv`
 or `envsubst` installed (the `envsubst`-specific test is skipped in that case).
 Tests also run in CI via GitHub Actions (see `.github/workflows/test.yml`).

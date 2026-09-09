@@ -42,6 +42,14 @@ $ ls -l  # Listing files again
 $ cat helloworld.txt  # Showing the file's contents
 
 # There's our "Hello World!"
+! sleep 1
+
+# Long commands can be split across lines with a trailing backslash "\",
+# just like in a real shell. They are typed out as written and run as one:
+
+$ echo "building" && \
+  echo "  ...testing" && \
+  echo "  ...done"
 
 # Finally, let's clean up.
 

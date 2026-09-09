@@ -48,44 +48,66 @@ slowtype_and_run() {
     echo -n "$SC_PROMPT"
 }
 
+# Expand environment variables in a line when envsubst is available;
+# otherwise return the line unchanged.
+expand_vars() {
+    if command -v envsubst >/dev/null 2>&1; then
+        envsubst <<< "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 run() {
     local filepath=$1
     mapfile -t lines < "$filepath"  # Read all lines into the array 'lines'
 
     # Iterate over the pre-read array (not the file via the loop's stdin), so
     # commands that consume stdin (e.g. ssh) can't swallow the rest of the
-    # script. This is why the lines are read up-front with mapfile above.
-    for line in "${lines[@]}"; do
+    # script. This is why the lines are read up-front with mapfile above. An
+    # index is used (rather than a plain `for`) so a command can consume the
+    # continuation lines that follow it (see the backslash handling below).
+    local n=${#lines[@]}
+    local i=0
+    local line cmd
+    while (( i < n )); do
         # Expand environment variables in the line when envsubst is
         # available; otherwise leave the line untouched.
-        if command -v envsubst >/dev/null 2>&1; then
-            line=$(envsubst <<< "$line")
-        fi
-        if [[ "$line" == \!\ * ]]; then
-            # Lines starting with an exclamation mark are commands run for
-            # their side effects only: stdout is suppressed to keep the demo
-            # clean (stderr is kept so real failures still surface).
-            eval "${line#"! "}" >/dev/null
-            if [[ "$line" =~ "SC_SPEED" ]]; then
-                init
-            fi
-            continue
-        fi
-        if [[ "$line" == \$\ * ]]; then
-            # lines starting with $ sign are commands to type and execute
-            slowtype_and_run "${line#"$ "}"
-            continue
-        fi
-        if [[ "$line" == //* ]]; then
-            # lines starting with // are comments and are ignored
-            continue
-        fi
-        if [[ "$line" == \#\ * ]]; then
-            # lines starting with # sign are text to type only
-            slowtype "$line"
-            continue
-        fi
-        # all the rest is ignored
+        line=$(expand_vars "${lines[i]}")
+        case "$line" in
+            \!\ *|\$\ *)
+                # Command lines: '!' runs silently (for setup/teardown), '$'
+                # is typed out and executed live. Either may span several
+                # physical lines, each continued with a trailing backslash
+                # (just like a shell), so gather those lines into one command.
+                cmd="$line"
+                while [[ "$cmd" == *\\ ]] && (( i + 1 < n )); do
+                    (( i++ ))
+                    cmd+=$'\n'$(expand_vars "${lines[i]}")
+                done
+                if [[ "$cmd" == \!\ * ]]; then
+                    # Silent command: stdout is suppressed to keep the demo
+                    # clean (stderr is kept so real failures still surface).
+                    eval "${cmd#"! "}" >/dev/null
+                    if [[ "$cmd" =~ "SC_SPEED" ]]; then
+                        init
+                    fi
+                else
+                    slowtype_and_run "${cmd#"$ "}"
+                fi
+                ;;
+            //*)
+                # lines starting with // are comments and are ignored
+                ;;
+            \#\ *)
+                # lines starting with # sign are text to type only
+                slowtype "$line"
+                ;;
+            *)
+                # all the rest is ignored
+                ;;
+        esac
+        (( i++ ))
     done
     slowtype "" 0
 }

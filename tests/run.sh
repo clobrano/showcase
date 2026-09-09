@@ -163,6 +163,56 @@ EOF
     assert_not_contains "unprefixed line is ignored" "$out" "UNPREFIXED_TOKEN"
 }
 
+test_dollar_multiline_command_is_joined_and_executed() {
+    # A '$' command whose line ends with a backslash continues onto the
+    # following lines (just like a shell), and the whole thing runs as one
+    # command. Here the two printf calls are joined with && across three
+    # physical lines.
+    local out
+    out="$(run_script <<'EOF'
+$ printf 'FIRST_HALF_' && \
+  printf 'SECOND_HALF' && \
+  printf '\n'
+EOF
+)"
+    # The joined command runs as a single pipeline: both halves appear.
+    assert_contains "'\$' multiline command executes joined" "$out" "FIRST_HALF_SECOND_HALF"
+    # The command is also typed out, continuation lines and all.
+    assert_contains "'\$' multiline command is displayed" "$out" "printf 'SECOND_HALF'"
+}
+
+test_silent_multiline_command_side_effect_runs() {
+    # A silent '!' command may also span multiple lines via trailing
+    # backslashes; the joined command still runs (with stdout suppressed).
+    local marker out
+    marker="$(mktemp -u)"
+    out="$(run_script <<EOF
+! printf 'multi' > "$marker" && \\
+  printf 'line' >> "$marker"
+EOF
+)"
+    assert_file_exists "'!' multiline command still runs (side effect)" "$marker"
+    if [[ -f "$marker" ]]; then
+        assert_contains "'!' multiline command joins all parts" \
+            "$(cat "$marker")" "multiline"
+    fi
+    rm -f "$marker"
+}
+
+test_multiline_command_does_not_consume_following_lines() {
+    # A command without a trailing backslash must NOT swallow the next line;
+    # the '#' text after it should still be typed.
+    local out
+    out="$(run_script <<'EOF'
+$ printf 'NO_CONT\n'
+# AFTER_TOKEN
+EOF
+)"
+    assert_contains "single-line '\$' command executes" "$out" "NO_CONT"
+    assert_contains "line after a non-continued command is still processed" \
+        "$out" "AFTER_TOKEN"
+}
+
 test_custom_prompt_is_used() {
     local out
     SC_PROMPT="CUSTOM_PROMPT_TOKEN> "
@@ -200,6 +250,9 @@ test_silent_command_side_effect_runs
 test_slash_comment_is_ignored
 test_commands_read_callers_stdin_not_the_script
 test_unprefixed_line_is_ignored
+test_dollar_multiline_command_is_joined_and_executed
+test_silent_multiline_command_side_effect_runs
+test_multiline_command_does_not_consume_following_lines
 test_custom_prompt_is_used
 test_envsubst_expands_variables
 
