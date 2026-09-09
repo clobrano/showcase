@@ -4,6 +4,22 @@ This tool simplifies the creation of engaging and repeatable software demonstrat
 
 [Watch the demo](https://youtu.be/nu-qY67qPzM)
 
+## Requirements
+
+* **bash** (4.0+ for `mapfile`).
+* **pv** — used to animate the "typing" effect. Optional: if `pv` is not
+  installed the text is printed instantly instead of being animated.
+* **envsubst** (from `gettext`) — used to expand environment variables inside
+  script lines. Optional: if it is not installed, lines are used verbatim.
+
+On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
+
+## Usage
+
+```bash
+./showcase.sh demo.txt
+```
+
 ## Key Features
 
 * **Script-Driven Demos:** Create demos by writing a simple script. Lines in the script are "typed" out as if a user were entering them.
@@ -39,3 +55,17 @@ These variables can also be set within the demo script itself using silent comma
 ## Example
 
 (Refer to the `demo.txt` file for a complete example)
+
+## Testing
+
+A self-contained test suite (pure bash, no external framework needed) lives in
+`tests/`:
+
+```bash
+./tests/run.sh
+```
+
+It sources `showcase.sh` and exercises each line type (`#`, `$`, `!`, `//`),
+prompt configuration, and variable expansion. The suite runs even without `pv`
+or `envsubst` installed (the `envsubst`-specific test is skipped in that case).
+Tests also run in CI via GitHub Actions (see `.github/workflows/test.yml`).

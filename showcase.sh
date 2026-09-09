@@ -13,6 +13,17 @@ init() {
     echo -n "$SC_PROMPT"
 }
 
+# Render stdin with a typing effect. Uses `pv` to animate output at
+# SC_SPEED when it is available, and falls back to plain output otherwise
+# so the tool still works (just without the animation) on minimal systems.
+type_effect() {
+    if command -v pv >/dev/null 2>&1; then
+        pv -qL "$SC_SPEED"
+    else
+        cat
+    fi
+}
+
 slowtype() {
     local text="$1"
     local prompt_at_the_end=${2:-1}
@@ -20,7 +31,7 @@ slowtype() {
         echo
     else
         # Add the hashtag at the beginning of the line
-        echo "$text" | pv -qL "$SC_SPEED"
+        echo "$text" | type_effect
     fi
     if [ "$prompt_at_the_end" -eq 1 ]; then
         echo -n "$SC_PROMPT"
@@ -44,10 +55,16 @@ run() {
     mapfile -t lines < "$filepath"  # Read all lines into the array 'lines'
 
     for line in "${lines[@]}"; do
-        line=$(envsubst <<< "$line")
+        # Expand environment variables in the line when envsubst is
+        # available; otherwise leave the line untouched.
+        if command -v envsubst >/dev/null 2>&1; then
+            line=$(envsubst <<< "$line")
+        fi
         if [[ "$line" == \!\ * ]]; then
-            # consider lines starting with exclamation mark as command to execute silently
-            eval "${line#"! "}"
+            # Lines starting with an exclamation mark are commands run for
+            # their side effects only: stdout is suppressed to keep the demo
+            # clean (stderr is kept so real failures still surface).
+            eval "${line#"! "}" >/dev/null
             if [[ "$line" =~ "SC_SPEED" ]]; then
                 init
             fi
@@ -73,4 +90,9 @@ run() {
 }
 
 # MAIN
-main "$1"
+# Only run automatically when executed directly. When the script is sourced
+# (e.g. by the test suite) this guard keeps `main` from running so individual
+# functions can be exercised in isolation.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$1"
+fi
