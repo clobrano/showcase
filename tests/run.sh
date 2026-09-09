@@ -134,6 +134,26 @@ EOF
     assert_not_contains "'//' comment line is ignored" "$out" "SLASH_COMMENT_TOKEN"
 }
 
+test_commands_read_callers_stdin_not_the_script() {
+    # Regression test: run() must not feed the script file to commands as
+    # stdin (an earlier `done < "$filepath"` bug did exactly that, so a
+    # command like `read`/`ssh` would swallow the script instead of the
+    # caller's input). A command that reads stdin should see what the caller
+    # piped into run(), not the first line of the script.
+    # `cat` echoes whatever stdin it is given. With the caller piping a known
+    # token into run(), a working tool echoes that token; the buggy redirect
+    # would instead make `cat` echo the script file's own contents.
+    local f out
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+$ cat
+EOF
+    out="$(printf 'CALLER_STDIN_9F3A\n' | run "$f" 2>&1)"
+    rm -f "$f"
+    assert_contains "commands read the caller's stdin, not the script file" \
+        "$out" "CALLER_STDIN_9F3A"
+}
+
 test_unprefixed_line_is_ignored() {
     local out
     out="$(run_script <<'EOF'
@@ -178,6 +198,7 @@ test_dollar_command_is_displayed_and_executed
 test_silent_command_suppresses_stdout
 test_silent_command_side_effect_runs
 test_slash_comment_is_ignored
+test_commands_read_callers_stdin_not_the_script
 test_unprefixed_line_is_ignored
 test_custom_prompt_is_used
 test_envsubst_expands_variables

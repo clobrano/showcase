@@ -33,6 +33,7 @@ On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
 * `#` Lines starting with a hashtag are displayed as if being typed.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
 * `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
+* `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any line that does not start with one of the markers above is also ignored.)
 
 ## Configuration
 

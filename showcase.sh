@@ -50,10 +50,11 @@ slowtype_and_run() {
 
 run() {
     local filepath=$1
-    # do not loop over the file rows in the loop, otherwise, for
-    # unknown reasons, the first ssh command will break the loop
     mapfile -t lines < "$filepath"  # Read all lines into the array 'lines'
 
+    # Iterate over the pre-read array (not the file via the loop's stdin), so
+    # commands that consume stdin (e.g. ssh) can't swallow the rest of the
+    # script. This is why the lines are read up-front with mapfile above.
     for line in "${lines[@]}"; do
         # Expand environment variables in the line when envsubst is
         # available; otherwise leave the line untouched.
@@ -75,8 +76,8 @@ run() {
             slowtype_and_run "${line#"$ "}"
             continue
         fi
-        if [[ "$line" == \\//?* ]]; then
-            # consider lines starting with slash as comments to ignore
+        if [[ "$line" == //* ]]; then
+            # lines starting with // are comments and are ignored
             continue
         fi
         if [[ "$line" == \#\ * ]]; then
@@ -85,7 +86,7 @@ run() {
             continue
         fi
         # all the rest is ignored
-    done < "$filepath"
+    done
     slowtype "" 0
 }
 
