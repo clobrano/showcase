@@ -213,6 +213,24 @@ EOF
         "$out" "AFTER_TOKEN"
 }
 
+test_empty_line_prints_blank_line() {
+    # An empty line in the script should render as an empty line during
+    # replay (as if the user pressed Enter), rather than being ignored.
+    local out
+    SC_PROMPT="PROMPT> "
+    out="$(run_script <<'EOF'
+# BEFORE_BLANK
+
+# AFTER_BLANK
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    # The blank line prints a newline right after the prompt, before the
+    # next line's content is typed.
+    assert_contains "empty script line prints a blank line" \
+        "$out" $'PROMPT> \n# AFTER_BLANK'
+}
+
 test_custom_prompt_is_used() {
     local out
     SC_PROMPT="CUSTOM_PROMPT_TOKEN> "
@@ -253,6 +271,7 @@ test_unprefixed_line_is_ignored
 test_dollar_multiline_command_is_joined_and_executed
 test_silent_multiline_command_side_effect_runs
 test_multiline_command_does_not_consume_following_lines
+test_empty_line_prints_blank_line
 test_custom_prompt_is_used
 test_envsubst_expands_variables
 

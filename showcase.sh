@@ -96,6 +96,11 @@ run() {
                     slowtype_and_run "${cmd#"$ "}"
                 fi
                 ;;
+            "")
+                # An empty line in the script prints an empty line during
+                # replay, as if the user had pressed Enter at the prompt.
+                echo
+                ;;
             //*)
                 # lines starting with // are comments and are ignored
                 ;;
