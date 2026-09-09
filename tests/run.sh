@@ -225,10 +225,10 @@ test_empty_line_prints_blank_line() {
 EOF
 )"
     SC_PROMPT="[showcase user] $ "  # restore default for later tests
-    # The blank line prints a newline right after the prompt, before the
-    # next line's content is typed.
-    assert_contains "empty script line prints a blank line" \
-        "$out" $'PROMPT> \n# AFTER_BLANK'
+    # Pressing Enter finishes the current prompt line and redraws a fresh
+    # prompt, so the next line's content is preceded by its own prompt.
+    assert_contains "empty script line redraws the prompt (press Enter)" \
+        "$out" $'PROMPT> \nPROMPT> # AFTER_BLANK'
 }
 
 test_custom_prompt_is_used() {

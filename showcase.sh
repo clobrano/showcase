@@ -97,9 +97,11 @@ run() {
                 fi
                 ;;
             "")
-                # An empty line in the script prints an empty line during
-                # replay, as if the user had pressed Enter at the prompt.
+                # An empty line reproduces pressing Enter at the prompt:
+                # finish the current prompt line, then draw a fresh prompt for
+                # the next line (just like a real terminal).
                 echo
+                echo -n "$SC_PROMPT"
                 ;;
             //*)
                 # lines starting with // are comments and are ignored
