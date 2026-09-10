@@ -125,6 +125,35 @@ EOF
     rm -f "$marker"
 }
 
+test_silent_clear_reaches_the_terminal() {
+    # Regression: silent commands redirect stdout to /dev/null, but `clear`
+    # works by writing escape sequences to stdout — so `! clear` must be
+    # exempt from that redirect or it silently does nothing. Here `clear` is
+    # overridden to emit a marker on stdout; finding it proves the redirect
+    # was skipped for `! clear`.
+    local out
+    clear() { printf 'CLEAR_TOKEN'; }
+    out="$(run_script <<'EOF'
+! clear
+EOF
+)"
+    clear() { :; }  # restore the no-op override for later tests
+    assert_contains "'! clear' stdout reaches the terminal" "$out" "CLEAR_TOKEN"
+}
+
+test_silent_command_suppresses_non_clear_stdout() {
+    # The clear exemption must be narrow: a silent command that merely
+    # contains the word "clear" (but isn't the bare `clear` command) still has
+    # its stdout suppressed like any other silent command.
+    local out
+    out="$(run_script <<'EOF'
+! echo clear NOISE_TOKEN
+EOF
+)"
+    assert_not_contains "'!' non-clear command stdout is still suppressed" \
+        "$out" "NOISE_TOKEN"
+}
+
 test_slash_comment_is_ignored() {
     local out
     out="$(run_script <<'EOF'
@@ -325,6 +354,8 @@ test_typed_text_is_shown
 test_dollar_command_is_displayed_and_executed
 test_silent_command_suppresses_stdout
 test_silent_command_side_effect_runs
+test_silent_clear_reaches_the_terminal
+test_silent_command_suppresses_non_clear_stdout
 test_slash_comment_is_ignored
 test_commands_read_callers_stdin_not_the_script
 test_unprefixed_line_is_ignored

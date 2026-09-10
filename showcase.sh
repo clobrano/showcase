@@ -115,7 +115,16 @@ run() {
                 if [[ "$cmd" == \!\ * ]]; then
                     # Silent command: stdout is suppressed to keep the demo
                     # clean (stderr is kept so real failures still surface).
-                    eval "${cmd#"! "}" >/dev/null
+                    # Exception: `clear` does its work by writing terminal
+                    # escape sequences to stdout, so suppressing stdout would
+                    # defeat it — let it reach the terminal so `! clear` still
+                    # clears the screen mid-demo.
+                    local silent_cmd="${cmd#"! "}"
+                    if [[ "${silent_cmd//[[:space:]]/}" == "clear" ]]; then
+                        eval "$silent_cmd"
+                    else
+                        eval "$silent_cmd" >/dev/null
+                    fi
                     if [[ "$cmd" =~ "SC_SPEED" ]]; then
                         init
                     fi
