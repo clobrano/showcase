@@ -2,16 +2,79 @@
 # -*- coding: UTF-8 -*-
 : "${SC_PROMPT:="[showcase user] $ "}"
 : "${SC_SPEED:=10}"
+# Dry-run mode: when set, matching commands are shown but NOT executed, so a
+# demo can be rehearsed without touching the system. Valid values:
+#   ""/none  - execute everything (default)
+#   all      - skip executing every command (both '$' and '!')
+#   visible  - skip executing only the visible '$' commands
+#   silent   - skip executing only the silent '!' commands
+# It can be set from the environment or with the --dry-run[=MODE] flag.
+: "${SC_DRY_RUN:=}"
 
 # Tracks whether a prompt is currently drawn on screen. It stays 0 until the
 # first prompt is emitted (by init or a typed line), so empty lines that come
 # before the prompt is configured don't print a stray default prompt.
 prompt_shown=0
 
+usage() {
+    cat <<'EOF'
+Usage: showcase.sh [--dry-run[=MODE]] SCRIPT
+
+Options:
+  --dry-run[=MODE]  Show commands without executing them. MODE is one of:
+                      all      skip every command (both '$' and '!') [default]
+                      visible  skip only the visible '$' commands
+                      silent   skip only the silent '!' commands
+  -h, --help        Show this help and exit.
+EOF
+}
+
 main() {
-    local sc_script=$1
+    local sc_script=""
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run)     SC_DRY_RUN="all" ;;
+            --dry-run=*)   SC_DRY_RUN="${arg#--dry-run=}" ;;
+            -h|--help)     usage; return 0 ;;
+            -*)
+                printf 'Unknown option: %s\n' "$arg" >&2
+                usage >&2
+                return 2
+                ;;
+            *)             sc_script="$arg" ;;
+        esac
+    done
+
+    # Validate the dry-run mode (whether it came from the flag or the
+    # environment) before doing anything, so a typo fails fast.
+    case "$SC_DRY_RUN" in
+        ""|none|all|visible|silent) ;;
+        *)
+            printf 'Invalid dry-run mode: %s (expected all, visible, or silent)\n' \
+                "$SC_DRY_RUN" >&2
+            return 2
+            ;;
+    esac
+
+    if [[ -z "$sc_script" ]]; then
+        printf 'No demo script provided.\n' >&2
+        usage >&2
+        return 2
+    fi
+
     clear
     run "$sc_script"
+}
+
+# Whether execution of visible ('$') commands should be skipped in dry-run.
+dry_run_skip_visible() {
+    [[ "$SC_DRY_RUN" == "all" || "$SC_DRY_RUN" == "visible" ]]
+}
+
+# Whether execution of silent ('!') commands should be skipped in dry-run.
+dry_run_skip_silent() {
+    [[ "$SC_DRY_RUN" == "all" || "$SC_DRY_RUN" == "silent" ]]
 }
 
 init() {
@@ -50,7 +113,11 @@ slowtype_and_run() {
     local command=$*
     slowtype "${command}" 0
     sleep 0.5
-    eval "${command}"
+    # In dry-run the command is still typed out above (so the demo looks the
+    # same), but its execution is skipped here.
+    if ! dry_run_skip_visible; then
+        eval "${command}"
+    fi
     sleep 1
     echo -n "$SC_PROMPT"
     prompt_shown=1
@@ -114,8 +181,13 @@ run() {
                 done
                 if [[ "$cmd" == \!\ * ]]; then
                     # Silent command: stdout is suppressed to keep the demo
-                    # clean (stderr is kept so real failures still surface).
-                    eval "${cmd#"! "}" >/dev/null
+                    # clean (stderr is kept so real failures still surface). In
+                    # dry-run its execution is skipped, but the prompt setup
+                    # (init, a display-only action) still runs so the demo's
+                    # look is preserved.
+                    if ! dry_run_skip_silent; then
+                        eval "${cmd#"! "}" >/dev/null
+                    fi
                     if [[ "$cmd" =~ "SC_SPEED" ]]; then
                         init
                     fi
@@ -158,5 +230,5 @@ run() {
 # (e.g. by the test suite) this guard keeps `main` from running so individual
 # functions can be exercised in isolation.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$1"
+    main "$@"
 fi
