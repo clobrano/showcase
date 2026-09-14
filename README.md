@@ -89,13 +89,17 @@ can't "pause" a command that has already started):
 
 | Key | Action |
 | --- | ------ |
-| `p` | Pause / resume the demo. While paused, playback stops at the current step until you press `p` again. |
-| `s` | Switch the typing speed to the **slow** preset (`SC_SPEED_SLOW`). |
-| `f` | Switch the typing speed to the **fast** preset (`SC_SPEED_FAST`). |
+| `p` | Pause / resume the demo. Pressing `p` while a command is being typed out stops the demo **just before that command runs**, so it is shown but not executed until you press `p` again. |
+| `s` | **Slower**: use the base typing speed `SC_SPEED` (the default pace). |
+| `f` | **Faster**: use the `SC_SPEED_FAST` preset. |
 
-Speed changes take effect from the next typed line onward, so you can slow down
-for an important command and speed back up for boilerplate. A speed key pressed
-while paused is applied when you resume.
+The base speed is `SC_SPEED` — the slow, default pace. Pressing `f` temporarily
+speeds typing up to `SC_SPEED_FAST`; pressing `s` drops back to `SC_SPEED`. The
+base is never lost, so if you change `SC_SPEED` mid-demo (with a silent
+`! export SC_SPEED=...` command), `s` returns to that new value. Speed changes
+take effect from the next typed line onward, so you can speed through
+boilerplate and slow down for the important command. A speed key pressed while
+paused is applied when you resume.
 
 Keys are only read from an interactive terminal, so a piped or redirected
 `stdin` (which belongs to the demo's own commands) is never consumed. Terminal
@@ -109,9 +113,8 @@ entirely.
 You can customize the demo's behavior using environment variables:
 
 * `SC_PROMPT`: Sets the prompt string displayed before commands (e.g., `$ `, `>` ) (default `[showcase user]`).
-* `SC_SPEED`: Controls the active typing speed; a higher number types faster (default = 10).
-* `SC_SPEED_SLOW`: The typing speed the `s` key switches to (default = 5).
-* `SC_SPEED_FAST`: The typing speed the `f` key switches to (default = 40).
+* `SC_SPEED`: The base typing speed; a higher number types faster (default = 10). This is the "slow" pace the `s` key returns to.
+* `SC_SPEED_FAST`: The faster typing speed the `f` key switches to (default = 40).
 * `SC_KEYS`: Set to `0` to disable the interactive [playback keys](#playback-controls-keys) (default = enabled). See above.
 * `SC_DRY_RUN`: Skips execution of commands while still printing them (`all`,
   `visible`, or `silent`; empty/unset means execute everything). Equivalent to

@@ -401,23 +401,29 @@ test_process_key_pause_toggles() {
     assert_contains "'p' again resumes (1 -> 0)" "$after_second" "0"
 }
 
-test_process_key_speed_slow_and_fast() {
-    # The 's'/'f' keys switch the active SC_SPEED to the slow/fast presets.
+test_process_key_speed_fast_and_back() {
+    # 'f' bumps the effective speed to the SC_SPEED_FAST preset via an override;
+    # 's' clears the override so the effective speed returns to the base
+    # SC_SPEED. The base SC_SPEED is never mutated, so a mid-demo change to it is
+    # preserved.
     local saved_speed="$SC_SPEED"
-    local saved_slow="$SC_SPEED_SLOW"
     local saved_fast="$SC_SPEED_FAST"
-    SC_SPEED_SLOW=3
+    local saved_override="$sc_speed_override"
+    SC_SPEED=7
     SC_SPEED_FAST=99
-    process_key s
-    local after_slow="$SC_SPEED"
+    sc_speed_override=""
     process_key f
-    local after_fast="$SC_SPEED"
+    local after_fast="${sc_speed_override:-$SC_SPEED}"
+    local base_after_fast="$SC_SPEED"
+    process_key s
+    local after_slow="${sc_speed_override:-$SC_SPEED}"
     # restore
     SC_SPEED="$saved_speed"
-    SC_SPEED_SLOW="$saved_slow"
     SC_SPEED_FAST="$saved_fast"
-    assert_contains "'s' selects the slow speed preset" "$after_slow" "3"
-    assert_contains "'f' selects the fast speed preset" "$after_fast" "99"
+    sc_speed_override="$saved_override"
+    assert_contains "'f' uses the fast preset" "$after_fast" "99"
+    assert_contains "'f' leaves the base SC_SPEED untouched" "$base_after_fast" "7"
+    assert_contains "'s' returns to the base SC_SPEED" "$after_slow" "7"
 }
 
 test_checkpoint_does_not_consume_piped_stdin() {
@@ -479,7 +485,7 @@ test_dry_run_all_skips_visible_and_silent_execution
 test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent
 test_process_key_pause_toggles
-test_process_key_speed_slow_and_fast
+test_process_key_speed_fast_and_back
 test_checkpoint_does_not_consume_piped_stdin
 test_envsubst_expands_variables
 

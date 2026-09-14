@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # -*- coding: UTF-8 -*-
 : "${SC_PROMPT:="[showcase user] $ "}"
-# SC_SPEED is the *active* typing speed (chars/second fed to `pv`); a higher
-# number types faster. SC_SPEED_SLOW and SC_SPEED_FAST are the two presets the
-# runtime keys 's' and 'f' switch the active speed to (see the playback keys
-# below). All three can be overridden from the environment.
+# SC_SPEED is the base typing speed (chars/second fed to `pv`); a higher number
+# types faster. It stays the "slow" pace: the 'f' key temporarily bumps the
+# speed to the SC_SPEED_FAST preset, and the 's' key drops back to SC_SPEED.
+# Both can be overridden from the environment, and SC_SPEED can still be changed
+# mid-demo with a silent '! export SC_SPEED=...' command.
 : "${SC_SPEED:=10}"
-: "${SC_SPEED_SLOW:=5}"
 : "${SC_SPEED_FAST:=40}"
 
 # Playback keys: while the demo runs, the presenter can press a key to control
 # the flow. Handling only happens at checkpoints *between* steps, so a command
 # that is already running is never interrupted (only the visible/silent flow is
 # affected). The keys are:
-#   p  toggle pause / resume
-#   s  switch the typing speed to the slow preset (SC_SPEED_SLOW)
-#   f  switch the typing speed to the fast preset (SC_SPEED_FAST)
+#   p  toggle pause / resume (pauses just before the next command runs)
+#   s  slower: use the base SC_SPEED (the default pace)
+#   f  faster: use the SC_SPEED_FAST preset
 # Keys are read only from an interactive terminal, so a piped/redirected stdin
 # (which belongs to the demo's own commands) is never consumed. Set SC_KEYS=0
 # to disable key handling entirely.
@@ -23,6 +23,11 @@
 
 # Whether the demo is currently paused (toggled by the 'p' key at a checkpoint).
 paused=0
+
+# Speed override set by the 'f' key. Empty means "follow SC_SPEED" (the base,
+# slow pace, restored by the 's' key); a non-empty value overrides it so the
+# base SC_SPEED — including any mid-demo change to it — is never lost.
+sc_speed_override=""
 
 # Saved terminal settings (from `stty -g`) while key handling is active, so the
 # original mode can be restored around live commands and on exit. Empty when key
@@ -55,9 +60,10 @@ Options:
   -h, --help        Show this help and exit.
 
 Playback keys (interactive terminal only; set SC_KEYS=0 to disable):
-  p  pause / resume the demo (between steps; a running command is not stopped)
-  s  switch typing speed to the slow preset (SC_SPEED_SLOW)
-  f  switch typing speed to the fast preset (SC_SPEED_FAST)
+  p  pause / resume (pauses just before the next command runs; a command
+     that is already running is not stopped)
+  s  slower: use the base typing speed SC_SPEED (the default pace)
+  f  faster: use the SC_SPEED_FAST preset
 EOF
 }
 
@@ -131,7 +137,8 @@ init() {
 # so the tool still works (just without the animation) on minimal systems.
 type_effect() {
     if command -v pv >/dev/null 2>&1; then
-        pv -qL "$SC_SPEED"
+        # Use the 'f'-key override when one is set, otherwise the base SC_SPEED.
+        pv -qL "${sc_speed_override:-$SC_SPEED}"
     else
         cat
     fi
@@ -157,6 +164,10 @@ slowtype_and_run() {
     local command=$*
     slowtype "${command}" 0
     sleep 0.5
+    # Pause point *after* the command has been typed but *before* it runs: a 'p'
+    # pressed while the command was being printed stops here, so the command is
+    # shown but not yet executed until the presenter resumes.
+    checkpoint
     # In dry-run the command is still typed out above (so the demo looks the
     # same), but its execution is skipped here.
     if ! dry_run_skip_visible; then
@@ -230,8 +241,8 @@ process_key() {
                 paused=1
             fi
             ;;
-        s|S) SC_SPEED="$SC_SPEED_SLOW" ;;
-        f|F) SC_SPEED="$SC_SPEED_FAST" ;;
+        s|S) sc_speed_override="" ;;               # back to the base SC_SPEED
+        f|F) sc_speed_override="$SC_SPEED_FAST" ;;  # bump to the fast preset
     esac
 }
 
