@@ -389,6 +389,56 @@ EOF
     rm -f "$vis" "$sil"
 }
 
+test_process_key_pause_toggles() {
+    # The 'p' key toggles the paused flag on and off.
+    paused=0
+    process_key p
+    local after_first="$paused"
+    process_key p
+    local after_second="$paused"
+    paused=0  # restore for later tests
+    assert_contains "'p' pauses (0 -> 1)" "$after_first" "1"
+    assert_contains "'p' again resumes (1 -> 0)" "$after_second" "0"
+}
+
+test_process_key_speed_slow_and_fast() {
+    # The 's'/'f' keys switch the active SC_SPEED to the slow/fast presets.
+    local saved_speed="$SC_SPEED"
+    local saved_slow="$SC_SPEED_SLOW"
+    local saved_fast="$SC_SPEED_FAST"
+    SC_SPEED_SLOW=3
+    SC_SPEED_FAST=99
+    process_key s
+    local after_slow="$SC_SPEED"
+    process_key f
+    local after_fast="$SC_SPEED"
+    # restore
+    SC_SPEED="$saved_speed"
+    SC_SPEED_SLOW="$saved_slow"
+    SC_SPEED_FAST="$saved_fast"
+    assert_contains "'s' selects the slow speed preset" "$after_slow" "3"
+    assert_contains "'f' selects the fast speed preset" "$after_fast" "99"
+}
+
+test_checkpoint_does_not_consume_piped_stdin() {
+    # Even with key handling enabled (SC_KEYS=1), a non-terminal stdin (a pipe,
+    # as used here and by commands that read input) must never be consumed by
+    # the flow-control checkpoint: the '-t 0' terminal guard ensures keys are
+    # only ever read from an interactive terminal. A '$ cat' command must still
+    # echo the caller's piped token, not lose it to a checkpoint read.
+    local f out saved_keys="${SC_KEYS:-1}"
+    SC_KEYS=1
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+$ cat
+EOF
+    out="$(printf 'KEEP_STDIN_TOKEN\n' | run "$f" 2>&1)"
+    rm -f "$f"
+    SC_KEYS="$saved_keys"
+    assert_contains "checkpoint does not consume piped stdin (keys enabled)" \
+        "$out" "KEEP_STDIN_TOKEN"
+}
+
 test_envsubst_expands_variables() {
     if ! command -v envsubst >/dev/null 2>&1; then
         printf '  \033[33mskip\033[0m envsubst variable expansion (envsubst not installed)\n'
@@ -428,6 +478,9 @@ test_custom_prompt_is_used
 test_dry_run_all_skips_visible_and_silent_execution
 test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent
+test_process_key_pause_toggles
+test_process_key_speed_slow_and_fast
+test_checkpoint_does_not_consume_piped_stdin
 test_envsubst_expands_variables
 
 echo

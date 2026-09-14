@@ -1,7 +1,34 @@
 #!/usr/bin/env bash
 # -*- coding: UTF-8 -*-
 : "${SC_PROMPT:="[showcase user] $ "}"
+# SC_SPEED is the *active* typing speed (chars/second fed to `pv`); a higher
+# number types faster. SC_SPEED_SLOW and SC_SPEED_FAST are the two presets the
+# runtime keys 's' and 'f' switch the active speed to (see the playback keys
+# below). All three can be overridden from the environment.
 : "${SC_SPEED:=10}"
+: "${SC_SPEED_SLOW:=5}"
+: "${SC_SPEED_FAST:=40}"
+
+# Playback keys: while the demo runs, the presenter can press a key to control
+# the flow. Handling only happens at checkpoints *between* steps, so a command
+# that is already running is never interrupted (only the visible/silent flow is
+# affected). The keys are:
+#   p  toggle pause / resume
+#   s  switch the typing speed to the slow preset (SC_SPEED_SLOW)
+#   f  switch the typing speed to the fast preset (SC_SPEED_FAST)
+# Keys are read only from an interactive terminal, so a piped/redirected stdin
+# (which belongs to the demo's own commands) is never consumed. Set SC_KEYS=0
+# to disable key handling entirely.
+: "${SC_KEYS:=1}"
+
+# Whether the demo is currently paused (toggled by the 'p' key at a checkpoint).
+paused=0
+
+# Saved terminal settings (from `stty -g`) while key handling is active, so the
+# original mode can be restored around live commands and on exit. Empty when key
+# handling is off, stdin isn't a terminal, or stty is unavailable.
+term_saved=""
+
 # Dry-run mode: when set, matching commands are shown but NOT executed, so a
 # demo can be rehearsed without touching the system. Valid values:
 #   ""/none  - execute everything (default)
@@ -26,6 +53,11 @@ Options:
                       visible  skip only the visible '$' commands
                       silent   skip only the silent '!' commands
   -h, --help        Show this help and exit.
+
+Playback keys (interactive terminal only; set SC_KEYS=0 to disable):
+  p  pause / resume the demo (between steps; a running command is not stopped)
+  s  switch typing speed to the slow preset (SC_SPEED_SLOW)
+  f  switch typing speed to the fast preset (SC_SPEED_FAST)
 EOF
 }
 
@@ -64,7 +96,11 @@ main() {
     fi
 
     clear
+    term_setup
     run "$sc_script"
+    local rc=$?
+    term_restore
+    return "$rc"
 }
 
 # Whether execution of visible ('$') commands should be skipped in dry-run.
@@ -124,7 +160,11 @@ slowtype_and_run() {
     # In dry-run the command is still typed out above (so the demo looks the
     # same), but its execution is skipped here.
     if ! dry_run_skip_visible; then
+        # Give the live command a normal terminal (echo on, canonical mode) so
+        # interactive programs behave, then resume key handling afterwards.
+        term_restore
         eval "${command}"
+        term_reapply
     fi
     sleep 1
     echo -n "$SC_PROMPT"
@@ -152,6 +192,72 @@ line_continues() {
     [[ "$1" =~ $re ]]
 }
 
+# Turn off terminal echo (and remember the previous settings) so the playback
+# keys the presenter presses between steps aren't printed into the demo. No-op
+# unless key handling is enabled, stdin is a terminal, and stty is available.
+# Also installs traps so the terminal is always restored, even on Ctrl-C.
+term_setup() {
+    [[ "$SC_KEYS" != 0 && -t 0 ]] || return 0
+    command -v stty >/dev/null 2>&1 || return 0
+    term_saved="$(stty -g 2>/dev/null)" || { term_saved=""; return 0; }
+    stty -echo 2>/dev/null
+    trap 'term_restore; exit 130' INT TERM
+    trap term_restore EXIT
+}
+
+# Restore the terminal to its saved settings. Used before running a live
+# command (so it sees a normal terminal) and on exit. Idempotent.
+term_restore() {
+    [[ -n "$term_saved" ]] || return 0
+    stty "$term_saved" 2>/dev/null
+}
+
+# Re-disable echo after a live command returns, resuming key handling. No-op
+# when the terminal was never put under our control.
+term_reapply() {
+    [[ -n "$term_saved" ]] || return 0
+    stty -echo 2>/dev/null
+}
+
+# Act on a single playback key. Kept separate from the reading logic so it can
+# be unit-tested directly (the actual key reads need an interactive terminal).
+process_key() {
+    case "$1" in
+        p|P)
+            if [[ "$paused" -eq 1 ]]; then
+                paused=0
+            else
+                paused=1
+            fi
+            ;;
+        s|S) SC_SPEED="$SC_SPEED_SLOW" ;;
+        f|F) SC_SPEED="$SC_SPEED_FAST" ;;
+    esac
+}
+
+# A flow-control checkpoint between demo steps: read any keys the presenter has
+# pressed and act on them, then block here for as long as the demo is paused.
+# It is a no-op unless key handling is enabled AND stdin is an interactive
+# terminal — reading from a non-terminal stdin (a pipe or file) would steal the
+# input meant for the demo's own commands (and for the test suite).
+checkpoint() {
+    [[ "$SC_KEYS" != 0 && -t 0 ]] || return 0
+    local key
+    # Consume every key queued since the previous checkpoint. The read returns
+    # as soon as a key is available; the short timeout only bounds the final,
+    # empty read, so this stays snappy when nothing was typed.
+    while IFS= read -rsn1 -t 0.01 key; do
+        process_key "$key"
+    done
+    # Honor a pause request by blocking until the demo is resumed. Speed keys
+    # ('s'/'f') are still processed while paused (they take effect on resume).
+    while [[ "$paused" -eq 1 ]]; do
+        if IFS= read -rsn1 key; then
+            process_key "$key"
+        fi
+    done
+}
+
 run() {
     local filepath=$1
     prompt_shown=0
@@ -166,6 +272,9 @@ run() {
     local i=0
     local line cmd
     while (( i < n )); do
+        # Flow control: pause/resume and speed keys take effect here, between
+        # steps, so a running command is never interrupted.
+        checkpoint
         # Expand environment variables in the line when envsubst is
         # available; otherwise leave the line untouched.
         line=$(expand_vars "${lines[i]}")
@@ -194,7 +303,9 @@ run() {
                     # (init, a display-only action) still runs so the demo's
                     # look is preserved.
                     if ! dry_run_skip_silent; then
+                        term_restore
                         eval "${cmd#"! "}"
+                        term_reapply
                     fi
                     if [[ "$cmd" =~ "SC_SPEED" ]]; then
                         init

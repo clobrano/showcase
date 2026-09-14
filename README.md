@@ -80,12 +80,39 @@ $ osac create computeinstance \
   osac get computeinstance default-vm --watch
 ```
 
+### Playback controls (keys)
+
+During a live demo you can drive the flow from the keyboard. Handling happens
+at checkpoints **between** steps, so a command that is already running is never
+interrupted — only the visible/silent flow is affected (as you'd expect: you
+can't "pause" a command that has already started):
+
+| Key | Action |
+| --- | ------ |
+| `p` | Pause / resume the demo. While paused, playback stops at the current step until you press `p` again. |
+| `s` | Switch the typing speed to the **slow** preset (`SC_SPEED_SLOW`). |
+| `f` | Switch the typing speed to the **fast** preset (`SC_SPEED_FAST`). |
+
+Speed changes take effect from the next typed line onward, so you can slow down
+for an important command and speed back up for boilerplate. A speed key pressed
+while paused is applied when you resume.
+
+Keys are only read from an interactive terminal, so a piped or redirected
+`stdin` (which belongs to the demo's own commands) is never consumed. Terminal
+echo is turned off while the tool is in control so your control keys don't
+appear on screen, and it is restored around every live command (so interactive
+programs still work) and on exit. Set `SC_KEYS=0` to disable key handling
+entirely.
+
 ## Configuration
 
 You can customize the demo's behavior using environment variables:
 
 * `SC_PROMPT`: Sets the prompt string displayed before commands (e.g., `$ `, `>` ) (default `[showcase user]`).
-* `SC_SPEED`: Controls the typing speed (default = 10).
+* `SC_SPEED`: Controls the active typing speed; a higher number types faster (default = 10).
+* `SC_SPEED_SLOW`: The typing speed the `s` key switches to (default = 5).
+* `SC_SPEED_FAST`: The typing speed the `f` key switches to (default = 40).
+* `SC_KEYS`: Set to `0` to disable the interactive [playback keys](#playback-controls-keys) (default = enabled). See above.
 * `SC_DRY_RUN`: Skips execution of commands while still printing them (`all`,
   `visible`, or `silent`; empty/unset means execute everything). Equivalent to
   the `--dry-run[=MODE]` flag. See [Dry run](#dry-run) above.
