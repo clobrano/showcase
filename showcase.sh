@@ -78,6 +78,14 @@ dry_run_skip_silent() {
 }
 
 init() {
+    # Draw the initial prompt, but only once: a silent command that references
+    # SC_SPEED triggers this, and a demo may do so more than once (e.g. change
+    # the speed mid-run). Redrawing when a prompt is already on screen would
+    # print the prompt twice on the same line, since it is emitted without a
+    # trailing newline.
+    if [[ "$prompt_shown" -eq 1 ]]; then
+        return
+    fi
     echo -n "$SC_PROMPT"
     prompt_shown=1
 }

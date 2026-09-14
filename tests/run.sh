@@ -113,13 +113,18 @@ EOF
     assert_contains "'\$' command is executed" "$out" "EXEC_OUTPUT"
 }
 
-test_silent_command_suppresses_stdout() {
+test_silent_command_is_not_displayed_but_output_shows() {
+    # A silent '!' command is "silent" in that its command line is not typed
+    # out on screen (unlike a '$' command). Its output is NOT suppressed,
+    # though (stdout/stderr flow through). The command text ("tr 'a'") must not
+    # appear, while its output ("AAA") must.
     local out
     out="$(run_script <<'EOF'
-! echo SILENT_NOISE_TOKEN
+! tr 'a' 'A' <<< 'aaa'
 EOF
 )"
-    assert_not_contains "'!' command stdout is suppressed" "$out" "SILENT_NOISE_TOKEN"
+    assert_not_contains "'!' command line is not displayed" "$out" "tr 'a'"
+    assert_contains "'!' command output is shown (not suppressed)" "$out" "AAA"
 }
 
 test_silent_command_side_effect_runs() {
@@ -257,6 +262,25 @@ EOF
         "$out" "CUSTOM_ONLY>"
 }
 
+test_silent_command_does_not_double_print_prompt() {
+    # Regression: a silent '!' command that references SC_SPEED triggers the
+    # initial prompt draw (init). When a demo does this more than once (e.g.
+    # changing the speed mid-run), the prompt must not be drawn again while one
+    # is already on screen, or two prompts end up on the same line.
+    local out
+    SC_PROMPT="P> "
+    out="$(run_script <<'EOF'
+! export SC_SPEED=1000000
+# hello
+! export SC_SPEED=1000000
+# world
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    assert_not_contains "silent command does not print the prompt twice on one line" \
+        "$out" "P> P>"
+}
+
 test_backslash_continuation_tolerates_trailing_whitespace() {
     # A stray space after a continuation backslash ("cmd \ ") must not break
     # the join. Regression: the old check only matched a backslash at the very
@@ -386,7 +410,7 @@ echo
 
 test_typed_text_is_shown
 test_dollar_command_is_displayed_and_executed
-test_silent_command_suppresses_stdout
+test_silent_command_is_not_displayed_but_output_shows
 test_silent_command_side_effect_runs
 test_slash_comment_is_ignored
 test_commands_read_callers_stdin_not_the_script
@@ -396,6 +420,7 @@ test_silent_multiline_command_side_effect_runs
 test_multiline_command_does_not_consume_following_lines
 test_empty_line_prints_blank_line
 test_empty_line_before_prompt_setup_emits_no_stray_prompt
+test_silent_command_does_not_double_print_prompt
 test_backslash_continuation_tolerates_trailing_whitespace
 test_trailing_pipe_continues_command
 test_trailing_logical_operator_continues_command
