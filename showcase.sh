@@ -71,6 +71,12 @@ Playback keys (interactive terminal only; set SC_KEYS=0 to disable):
      that is already running is not stopped)
   s  slower: use the base typing speed SC_SPEED (the default pace)
   f  faster: use the SC_SPEED_FAST preset
+
+Script directives (scripted equivalents of the keys, on their own line):
+  /pause  stop until the presenter presses 'p' (skipped on a non-interactive
+          run so it never hangs)
+  /slow   use the base typing speed SC_SPEED (like the 's' key)
+  /fast   use the SC_SPEED_FAST preset (like the 'f' key)
 EOF
 }
 
@@ -265,13 +271,33 @@ process_key() {
     esac
 }
 
+# Whether keys can actually be read right now: key handling is enabled AND stdin
+# is an interactive terminal. Reading from a non-terminal stdin (a pipe or file)
+# would steal the input meant for the demo's own commands (and for the test
+# suite), and blocking for a key that can never come would hang the demo.
+keys_active() {
+    [[ "$SC_KEYS" != 0 && -t 0 ]]
+}
+
+# Block until the demo is resumed (paused back to 0). Speed keys ('s'/'f') are
+# still processed while paused. Guarded so it never blocks when a key can't
+# arrive — otherwise a pause (manual or scripted) would hang a non-interactive
+# run forever.
+wait_while_paused() {
+    keys_active || return 0
+    local key
+    while [[ "$paused" -eq 1 ]]; do
+        if IFS= read -rsn1 key; then
+            process_key "$key"
+        fi
+    done
+}
+
 # A flow-control checkpoint between demo steps: read any keys the presenter has
 # pressed and act on them, then block here for as long as the demo is paused.
-# It is a no-op unless key handling is enabled AND stdin is an interactive
-# terminal — reading from a non-terminal stdin (a pipe or file) would steal the
-# input meant for the demo's own commands (and for the test suite).
+# It is a no-op unless keys can be read (see keys_active).
 checkpoint() {
-    [[ "$SC_KEYS" != 0 && -t 0 ]] || return 0
+    keys_active || return 0
     local key
     # Consume every key queued since the previous checkpoint. The read returns
     # as soon as a key is available; the short timeout only bounds the final,
@@ -279,13 +305,29 @@ checkpoint() {
     while IFS= read -rsn1 -t 0.01 key; do
         process_key "$key"
     done
-    # Honor a pause request by blocking until the demo is resumed. Speed keys
-    # ('s'/'f') are still processed while paused (they take effect on resume).
-    while [[ "$paused" -eq 1 ]]; do
-        if IFS= read -rsn1 key; then
-            process_key "$key"
-        fi
-    done
+    wait_while_paused
+}
+
+# Handle a script directive line (e.g. '/pause', '/fast', '/slow'): the scripted
+# equivalents of the playback keys, so a demo can bake pause points and speed
+# changes into the script itself. Returns 0 if the line was a directive (and was
+# handled), 1 otherwise so the caller can fall through to other line types.
+run_directive() {
+    case "$1" in
+        "/pause"|"/pause "*)
+            # Scripted pause: stop here until the presenter presses 'p'. Only
+            # when a key can actually arrive, so a non-interactive run (CI,
+            # piped stdin, dry-run without a TTY) never hangs — it just skips.
+            if keys_active; then
+                paused=1
+                wait_while_paused
+            fi
+            ;;
+        "/fast"|"/fast "*) process_key f ;;  # same as pressing 'f'
+        "/slow"|"/slow "*) process_key s ;;  # same as pressing 's'
+        *) return 1 ;;
+    esac
+    return 0
 }
 
 run() {
@@ -370,7 +412,9 @@ run() {
                 slowtype "$line"
                 ;;
             *)
-                # all the rest is ignored
+                # A script directive (e.g. /pause, /fast, /slow) is handled here;
+                # any other unrecognized line is ignored.
+                run_directive "$line" || true
                 ;;
         esac
         (( i++ ))

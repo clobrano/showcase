@@ -60,6 +60,7 @@ commands to be shown without executing.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
 * `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any non-empty line that does not start with one of the markers above is also ignored.)
+* `/pause`, `/slow`, `/fast` Lines that are one of these **directives** control playback from within the script (see [Script directives](#script-directives) below). They are never displayed.
 * An **empty line** renders as an empty line during replay, as if the user had pressed Enter at the prompt. Use blank lines in your script to add breathing room to the demo.
 
 ### Multiline commands
@@ -111,6 +112,35 @@ echo is turned off while the tool is in control so your control keys don't
 appear on screen, and it is restored around every live command (so interactive
 programs still work) and on exit. Set `SC_KEYS=0` to disable key handling
 entirely.
+
+### Script directives
+
+You can also bake the same controls into the script, on their own line, so you
+don't have to press the key at exactly the right moment. Directives are never
+displayed:
+
+| Directive | Action |
+| --------- | ------ |
+| `/pause`  | Stop the demo at this point and wait until you press `p`. This is the scripted way to break for a talking point — the demo continues only when you resume it. |
+| `/slow`   | Switch to the base typing speed `SC_SPEED` (same as the `s` key). |
+| `/fast`   | Switch to the `SC_SPEED_FAST` preset (same as the `f` key). |
+
+For example:
+
+```
+# Here's the key command of the whole demo.
+/pause
+$ deploy --production
+/fast
+# ...and now the boring cleanup, sped up.
+$ rm -rf ./tmp
+```
+
+`/pause` needs a terminal to read the `p` key from, so on a **non-interactive**
+run (piped/redirected `stdin`, or `--dry-run` without a terminal) it is skipped
+rather than waiting forever — the demo simply continues. Like the keys, a
+`/fast` speed change is superseded the moment the script changes `SC_SPEED`
+itself.
 
 ## Configuration
 

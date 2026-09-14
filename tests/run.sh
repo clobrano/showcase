@@ -483,6 +483,50 @@ EOF
     assert_contains "run() applies the script-set SC_SPEED" "$speed_after" "999999"
 }
 
+test_pause_directive_does_not_hang_without_tty() {
+    # A '/pause' directive must not block when a key can't arrive (stdin is not
+    # a terminal), so a non-interactive run never hangs. The line after it is
+    # still processed. Uses </dev/null so stdin is definitely not a terminal,
+    # even when the suite is run from an interactive shell.
+    local f out
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+# BEFORE_PAUSE
+/pause
+# AFTER_PAUSE
+EOF
+    out="$(run "$f" </dev/null 2>&1)"
+    rm -f "$f"
+    assert_contains "content before '/pause' is shown" "$out" "BEFORE_PAUSE"
+    assert_contains "'/pause' does not hang a non-interactive run" \
+        "$out" "AFTER_PAUSE"
+}
+
+test_fast_slow_directives_set_speed() {
+    # The '/fast' and '/slow' directives are the scripted equivalents of the
+    # 'f'/'s' keys: '/fast' sets the fast override, '/slow' clears it. Run in the
+    # CURRENT shell (not a "$(...)" subshell) so the variable changes are
+    # observable, and </dev/null so any checkpoint is a no-op.
+    local f saved_speed="$SC_SPEED" saved_fast="$SC_SPEED_FAST"
+    local saved_override="$sc_speed_override" saved_seen="$sc_speed_seen"
+    SC_SPEED=1000000
+    SC_SPEED_FAST=4242
+    sc_speed_override=""
+    f="$(mktemp)"
+    printf '/fast\n' >"$f"
+    run "$f" </dev/null >/dev/null 2>&1
+    local after_fast="${sc_speed_override:-EMPTY}"
+    sc_speed_override=4242  # ensure /slow has something to clear
+    printf '/slow\n' >"$f"
+    run "$f" </dev/null >/dev/null 2>&1
+    local after_slow="${sc_speed_override:-EMPTY}"
+    rm -f "$f"
+    SC_SPEED="$saved_speed"; SC_SPEED_FAST="$saved_fast"
+    sc_speed_override="$saved_override"; sc_speed_seen="$saved_seen"
+    assert_contains "'/fast' sets the fast override" "$after_fast" "4242"
+    assert_contains "'/slow' clears the override (back to base)" "$after_slow" "EMPTY"
+}
+
 test_checkpoint_does_not_consume_piped_stdin() {
     # Even with key handling enabled (SC_KEYS=1), a non-terminal stdin (a pipe,
     # as used here and by commands that read input) must never be consumed by
@@ -545,6 +589,8 @@ test_process_key_pause_toggles
 test_process_key_speed_fast_and_back
 test_script_speed_change_overrides_key
 test_run_applies_script_speed_change_over_key_override
+test_pause_directive_does_not_hang_without_tty
+test_fast_slow_directives_set_speed
 test_checkpoint_does_not_consume_piped_stdin
 test_envsubst_expands_variables
 
