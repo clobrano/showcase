@@ -50,9 +50,16 @@ term_saved=""
 # It can be set from the environment or with the --dry-run[=MODE] flag.
 : "${SC_DRY_RUN:=}"
 
-# Tracks whether a prompt is currently drawn on screen. It stays 0 until the
-# first prompt is emitted (by init or a typed line), so empty lines that come
-# before the prompt is configured don't print a stray default prompt.
+# Prompt state. The prompt is drawn *lazily* — right before a line's content
+# (see ensure_prompt) rather than left dangling after the previous line — so a
+# silent command's output always starts on a clean line instead of colliding
+# with a leftover prompt.
+#   prompt_active: whether the demo has entered "prompt mode". It stays 0 until
+#     a typed line appears or SC_SPEED is set, so lines before then (e.g. a blank
+#     line during early setup) don't print a stray default prompt.
+#   prompt_shown:  whether a prompt is currently drawn on the current line and
+#     not yet followed by a newline.
+prompt_active=0
 prompt_shown=0
 
 usage() {
@@ -132,17 +139,21 @@ dry_run_skip_silent() {
     [[ "$SC_DRY_RUN" == "all" || "$SC_DRY_RUN" == "silent" ]]
 }
 
-init() {
-    # Draw the initial prompt, but only once: a silent command that references
-    # SC_SPEED triggers this, and a demo may do so more than once (e.g. change
-    # the speed mid-run). Redrawing when a prompt is already on screen would
-    # print the prompt twice on the same line, since it is emitted without a
-    # trailing newline.
-    if [[ "$prompt_shown" -eq 1 ]]; then
-        return
+# Enter "prompt mode" so subsequent lines show a prompt. Triggered when the
+# demo sets SC_SPEED (a common first-setup step), so a blank line right after
+# setup still gets a prompt. Idempotent — safe to call more than once.
+enter_prompt_mode() {
+    prompt_active=1
+}
+
+# Draw the prompt for the current line if one isn't already on it. The prompt is
+# only ever drawn here (lazily, before content), so it never dangles after a line
+# for a silent command's output to collide with.
+ensure_prompt() {
+    if [[ "$prompt_active" -eq 1 && "$prompt_shown" -eq 0 ]]; then
+        echo -n "$SC_PROMPT"
+        prompt_shown=1
     fi
-    echo -n "$SC_PROMPT"
-    prompt_shown=1
 }
 
 # Render stdin with a typing effect. Uses `pv` to animate output at
@@ -159,16 +170,18 @@ type_effect() {
 
 slowtype() {
     local text="$1"
-    local prompt_at_the_end=${2:-1}
+    local pause_at_the_end=${2:-1}
+    # A typed line means we're in prompt mode; draw its prompt before the text.
+    enter_prompt_mode
+    ensure_prompt
     if [ ${#text} == 0 ]; then
         echo
     else
-        # Add the hashtag at the beginning of the line
         echo "$text" | type_effect
     fi
-    if [ "$prompt_at_the_end" -eq 1 ]; then
-        echo -n "$SC_PROMPT"
-        prompt_shown=1
+    # The line ended with a newline, so no prompt is dangling any more.
+    prompt_shown=0
+    if [ "$pause_at_the_end" -eq 1 ]; then
         sleep 1
     fi
 }
@@ -191,8 +204,8 @@ slowtype_and_run() {
         term_reapply
     fi
     sleep 1
-    echo -n "$SC_PROMPT"
-    prompt_shown=1
+    # No trailing prompt is drawn here: the next line draws its own (lazily), so
+    # nothing dangles for a following silent command's output to collide with.
 }
 
 # Expand environment variables in a line when envsubst is available;
@@ -388,36 +401,36 @@ run() {
                     cmd+=$'\n'$(expand_vars "${lines[i]}")
                 done
                 if [[ "$cmd" == \!\ * ]]; then
-                    # Silent command: command is not printed, but stdout and stderr
-                    # are not suppressed.
-                    # In dry-run its execution is skipped, but the prompt setup
-                    # (init, a display-only action) still runs so the demo's
-                    # look is preserved.
+                    # Silent command: command is not printed, but stdout and
+                    # stderr are not suppressed. If a prompt somehow still dangles
+                    # on the current line, end it first so the command's output
+                    # starts on a clean line (never overwriting the prompt, e.g.
+                    # a progress line that uses '\r').
+                    if [[ "$prompt_shown" -eq 1 ]]; then
+                        echo
+                        prompt_shown=0
+                    fi
+                    # In dry-run its execution is skipped.
                     if ! dry_run_skip_silent; then
                         term_restore
                         eval "${cmd#"! "}"
                         term_reapply
                     fi
+                    # Setting SC_SPEED is the usual cue that setup is done, so
+                    # enter prompt mode (the prompt itself is drawn lazily later).
                     if [[ "$cmd" =~ "SC_SPEED" ]]; then
-                        init
+                        enter_prompt_mode
                     fi
                 else
                     slowtype_and_run "${cmd#"$ "}"
                 fi
                 ;;
             "")
-                if [[ "$prompt_shown" -eq 1 ]]; then
-                    # A prompt is on screen: reproduce pressing Enter at the
-                    # prompt. Finish the current prompt line, then draw a fresh
-                    # prompt for the next line (just like a real terminal).
-                    echo
-                    echo -n "$SC_PROMPT"
-                else
-                    # No prompt has been drawn yet (e.g. an empty line before
-                    # the prompt is configured), so just emit a blank line and
-                    # don't print a stray prompt.
-                    echo
-                fi
+                # Reproduce pressing Enter at the prompt: draw the prompt for
+                # this line (lazily, if we're in prompt mode) then end the line.
+                ensure_prompt
+                echo
+                prompt_shown=0
                 ;;
             //*)
                 # lines starting with // are comments and are ignored
@@ -434,7 +447,10 @@ run() {
         esac
         (( i++ ))
     done
-    slowtype "" 0
+    # End at a shell prompt (drawn lazily), like a real terminal after the demo.
+    ensure_prompt
+    echo
+    prompt_shown=0
 }
 
 # MAIN

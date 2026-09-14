@@ -50,7 +50,7 @@ commands to be shown without executing.
 
 * **Script-Driven Demos:** Create demos by writing a simple script. Lines in the script are "typed" out as if a user were entering them.
 * **Live Command Execution:** Embed and execute shell commands **live** during the demo. The command is displayed, followed by its **real-time** output. This ensures the demo reflects the current system state, not a pre-recorded result.
-* **Silent Commands:** Execute commands without displaying their output, useful for setup and cleanup tasks within the demo.
+* **Silent Commands:** Execute commands without displaying the *command line*, useful for setup and cleanup (e.g. `export`, `sleep`) — their output, if any, still appears (so a progress command like a `watch`-style loop works).
 * **Repeatable Demos:** Ensure consistent and error-free demonstrations every time. You can test and refine your script before any presentation.
 * **Easy Preparation:** Demos are much easier and faster to prepare compared to live typing, reducing the risk of mistakes and saving time.
 
@@ -58,7 +58,7 @@ commands to be shown without executing.
 
 * `#` Lines starting with a hashtag are displayed as if being typed.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
-* `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
+* `!` Lines starting with an exclamation mark are executed as shell commands, but the command line itself is **not displayed** (its output, if any, still appears). Useful to set up the demo environment and introduce pauses (e.g. `sleep 1`), or to run a command whose output you want without showing the command that produced it.
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any non-empty line that does not start with one of the markers above is also ignored.)
 * `/pause`, `/slow`, `/fast` Lines that are one of these **directives** control playback from within the script (see [Script directives](#script-directives) below). They are never displayed.
 * An **empty line** renders as an empty line during replay, as if the user had pressed Enter at the prompt. Use blank lines in your script to add breathing room to the demo.

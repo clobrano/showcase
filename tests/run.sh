@@ -138,6 +138,27 @@ EOF
     rm -f "$marker"
 }
 
+test_silent_command_output_starts_on_fresh_line() {
+    # Regression: a silent '!' command's output must start on its own line, not
+    # glued onto the prompt from the previous line — otherwise output that uses
+    # '\r' (e.g. a progress line like watch.sh) overwrites the prompt. The
+    # visible '$' command after it must also still show its own prompt.
+    local out
+    SC_PROMPT="P> "
+    out="$(run_script <<'EOF'
+# narration
+! printf 'SILENT_OUT\n'
+$ printf 'CMDTOK\n'
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    assert_contains "silent command output is shown" "$out" "SILENT_OUT"
+    assert_not_contains "silent output is not glued to the prompt" \
+        "$out" "P> SILENT_OUT"
+    assert_contains "the command after a silent one keeps its prompt" \
+        "$out" "P> printf 'CMDTOK"
+}
+
 test_slash_comment_is_ignored() {
     local out
     out="$(run_script <<'EOF'
@@ -569,6 +590,7 @@ test_typed_text_is_shown
 test_dollar_command_is_displayed_and_executed
 test_silent_command_is_not_displayed_but_output_shows
 test_silent_command_side_effect_runs
+test_silent_command_output_starts_on_fresh_line
 test_slash_comment_is_ignored
 test_commands_read_callers_stdin_not_the_script
 test_unprefixed_line_is_ignored
