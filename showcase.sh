@@ -180,13 +180,13 @@ run() {
                     cmd+=$'\n'$(expand_vars "${lines[i]}")
                 done
                 if [[ "$cmd" == \!\ * ]]; then
-                    # Silent command: stdout is suppressed to keep the demo
-                    # clean (stderr is kept so real failures still surface). In
-                    # dry-run its execution is skipped, but the prompt setup
+                    # Silent command: command is not printed, but stdout and stderr
+                    # are not suppressed.
+                    # In dry-run its execution is skipped, but the prompt setup
                     # (init, a display-only action) still runs so the demo's
                     # look is preserved.
                     if ! dry_run_skip_silent; then
-                        eval "${cmd#"! "}" >/dev/null
+                        eval "${cmd#"! "}"
                     fi
                     if [[ "$cmd" =~ "SC_SPEED" ]]; then
                         init
