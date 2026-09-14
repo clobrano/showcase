@@ -20,6 +20,32 @@ On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
 ./showcase.sh demo.txt
 ```
 
+### Dry run
+
+Use `--dry-run` to rehearse a demo without touching the system: the commands
+are still printed on screen, but their execution is skipped. Because a script
+has two kinds of commands — visible (`$`) and silent (`!`) — you can choose
+which kind to skip:
+
+```bash
+./showcase.sh --dry-run demo.txt          # skip every command ("all")
+./showcase.sh --dry-run=all demo.txt      # same as above
+./showcase.sh --dry-run=visible demo.txt  # skip only the visible '$' commands
+./showcase.sh --dry-run=silent demo.txt   # skip only the silent '!' commands
+```
+
+The same behavior can be set from the environment with `SC_DRY_RUN` (`all`,
+`visible`, or `silent`):
+
+```bash
+SC_DRY_RUN=visible ./showcase.sh demo.txt
+```
+
+Note that silent commands are often used for setup (e.g. `export SC_PROMPT=...`,
+`sleep`); skipping them (`all` or `silent`) also skips that setup. Use
+`--dry-run=visible` when you want the setup to run but the visible demo
+commands to be shown without executing.
+
 ## Key Features
 
 * **Script-Driven Demos:** Create demos by writing a simple script. Lines in the script are "typed" out as if a user were entering them.
@@ -60,6 +86,9 @@ You can customize the demo's behavior using environment variables:
 
 * `SC_PROMPT`: Sets the prompt string displayed before commands (e.g., `$ `, `>` ) (default `[showcase user]`).
 * `SC_SPEED`: Controls the typing speed (default = 10).
+* `SC_DRY_RUN`: Skips execution of commands while still printing them (`all`,
+  `visible`, or `silent`; empty/unset means execute everything). Equivalent to
+  the `--dry-run[=MODE]` flag. See [Dry run](#dry-run) above.
 
 These variables can also be set within the demo script itself using silent commands (`!`) at the beginning, allowing for dynamic configuration.
 

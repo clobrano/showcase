@@ -71,6 +71,14 @@ assert_file_exists() { # label path
     fi
 }
 
+assert_file_not_exists() { # label path
+    if [[ ! -f "$2" ]]; then
+        _pass "$1"
+    else
+        _fail "$1" "expected file NOT to exist: [$2]"
+    fi
+}
+
 # Write the here-doc on stdin to a temp script, run it through run(), and
 # echo the captured output (stdout + stderr).
 run_script() {
@@ -302,6 +310,61 @@ EOF
     assert_contains "SC_PROMPT customises the prompt" "$out" "CUSTOM_PROMPT_TOKEN>"
 }
 
+test_dry_run_all_skips_visible_and_silent_execution() {
+    # With SC_DRY_RUN=all, neither the visible '$' command nor the silent '!'
+    # command actually runs (no marker files), yet the visible command is
+    # still typed out on screen.
+    local vis sil out
+    vis="$(mktemp -u)"
+    sil="$(mktemp -u)"
+    SC_DRY_RUN="all"
+    out="$(run_script <<EOF
+\$ printf data > "$vis"  # VISIBLE_DRY_TOKEN
+! printf data > "$sil"
+EOF
+)"
+    SC_DRY_RUN=""
+    assert_file_not_exists "dry-run=all skips '\$' command execution" "$vis"
+    assert_file_not_exists "dry-run=all skips '!' command execution" "$sil"
+    assert_contains "dry-run=all still displays the visible command" \
+        "$out" "VISIBLE_DRY_TOKEN"
+    rm -f "$vis" "$sil"
+}
+
+test_dry_run_visible_skips_only_visible() {
+    # With SC_DRY_RUN=visible, the visible '$' command is skipped but the
+    # silent '!' command still runs.
+    local vis sil
+    vis="$(mktemp -u)"
+    sil="$(mktemp -u)"
+    SC_DRY_RUN="visible"
+    run_script >/dev/null <<EOF
+\$ printf data > "$vis"
+! printf data > "$sil"
+EOF
+    SC_DRY_RUN=""
+    assert_file_not_exists "dry-run=visible skips the '\$' command" "$vis"
+    assert_file_exists "dry-run=visible still runs the '!' command" "$sil"
+    rm -f "$vis" "$sil"
+}
+
+test_dry_run_silent_skips_only_silent() {
+    # With SC_DRY_RUN=silent, the silent '!' command is skipped but the
+    # visible '$' command still runs.
+    local vis sil
+    vis="$(mktemp -u)"
+    sil="$(mktemp -u)"
+    SC_DRY_RUN="silent"
+    run_script >/dev/null <<EOF
+\$ printf data > "$vis"
+! printf data > "$sil"
+EOF
+    SC_DRY_RUN=""
+    assert_file_exists "dry-run=silent still runs the '\$' command" "$vis"
+    assert_file_not_exists "dry-run=silent skips the '!' command" "$sil"
+    rm -f "$vis" "$sil"
+}
+
 test_envsubst_expands_variables() {
     if ! command -v envsubst >/dev/null 2>&1; then
         printf '  \033[33mskip\033[0m envsubst variable expansion (envsubst not installed)\n'
@@ -337,6 +400,9 @@ test_backslash_continuation_tolerates_trailing_whitespace
 test_trailing_pipe_continues_command
 test_trailing_logical_operator_continues_command
 test_custom_prompt_is_used
+test_dry_run_all_skips_visible_and_silent_execution
+test_dry_run_visible_skips_only_visible
+test_dry_run_silent_skips_only_silent
 test_envsubst_expands_variables
 
 echo
