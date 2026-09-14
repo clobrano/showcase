@@ -279,18 +279,33 @@ keys_active() {
     [[ "$SC_KEYS" != 0 && -t 0 ]]
 }
 
+# Draw / erase a subtle dimmed "-- paused --" cue at the cursor so the presenter
+# can see the demo is waiting. The cursor position is saved before the cue is
+# drawn and restored (clearing the cue and any trailing remnant on the line)
+# when the demo resumes, so the demo's own output is left exactly as it was.
+# Nothing prints while paused, so the saved position stays valid.
+show_paused_cue() {
+    printf '\033[s\033[2m-- paused --\033[0m'
+}
+clear_paused_cue() {
+    printf '\033[u\033[0K'
+}
+
 # Block until the demo is resumed (paused back to 0). Speed keys ('s'/'f') are
 # still processed while paused. Guarded so it never blocks when a key can't
 # arrive — otherwise a pause (manual or scripted) would hang a non-interactive
-# run forever.
+# run forever. While blocked, a subtle "-- paused --" cue is shown.
 wait_while_paused() {
     keys_active || return 0
+    [[ "$paused" -eq 1 ]] || return 0
     local key
+    show_paused_cue
     while [[ "$paused" -eq 1 ]]; do
         if IFS= read -rsn1 key; then
             process_key "$key"
         fi
     done
+    clear_paused_cue
 }
 
 # A flow-control checkpoint between demo steps: read any keys the presenter has

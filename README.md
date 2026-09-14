@@ -106,6 +106,10 @@ the new base pace and clears any `f`/`s` override in effect. You can still press
 `f`/`s` again afterwards to adjust from there, until the script changes the
 speed once more.
 
+While the demo is paused (via the `p` key or the `/pause` directive), a subtle
+dimmed `-- paused --` cue is shown at the cursor and disappears the moment you
+resume, so it's clear the demo is waiting for you.
+
 Keys are only read from an interactive terminal, so a piped or redirected
 `stdin` (which belongs to the demo's own commands) is never consumed. Terminal
 echo is turned off while the tool is in control so your control keys don't
