@@ -4,8 +4,9 @@
 # SC_SPEED is the base typing speed (chars/second fed to `pv`); a higher number
 # types faster. It stays the "slow" pace: the 'f' key temporarily bumps the
 # speed to the SC_SPEED_FAST preset, and the 's' key drops back to SC_SPEED.
-# Both can be overridden from the environment, and SC_SPEED can still be changed
-# mid-demo with a silent '! export SC_SPEED=...' command.
+# Both can be overridden from the environment. SC_SPEED can also be changed
+# mid-demo with a silent '! export SC_SPEED=...' command, and such a script-set
+# change takes priority over an 'f'/'s' key override (see reconcile_speed).
 : "${SC_SPEED:=10}"
 : "${SC_SPEED_FAST:=40}"
 
@@ -25,9 +26,15 @@
 paused=0
 
 # Speed override set by the 'f' key. Empty means "follow SC_SPEED" (the base,
-# slow pace, restored by the 's' key); a non-empty value overrides it so the
-# base SC_SPEED — including any mid-demo change to it — is never lost.
+# slow pace, restored by the 's' key); a non-empty value overrides it.
 sc_speed_override=""
+
+# The last SC_SPEED value the tool observed. Used to notice when the *script*
+# itself changes SC_SPEED (e.g. a '! export SC_SPEED=...' command). A script-set
+# change takes priority over an 'f'/'s' key override: it clears the override so
+# the script's speed wins. A key pressed afterwards overrides again, until the
+# script changes SC_SPEED once more.
+sc_speed_seen="$SC_SPEED"
 
 # Saved terminal settings (from `stty -g`) while key handling is active, so the
 # original mode can be restored around live commands and on exit. Empty when key
@@ -230,6 +237,18 @@ term_reapply() {
     stty -echo 2>/dev/null
 }
 
+# Give a script-set SC_SPEED change priority over a key override. If SC_SPEED
+# differs from the last value we saw, the script changed it (e.g. via a silent
+# '! export SC_SPEED=...' command), so drop any 'f'/'s' key override and let the
+# script's speed take effect. Runs in the main shell (never a subshell) so its
+# state updates persist.
+reconcile_speed() {
+    if [[ "$SC_SPEED" != "$sc_speed_seen" ]]; then
+        sc_speed_seen="$SC_SPEED"
+        sc_speed_override=""
+    fi
+}
+
 # Act on a single playback key. Kept separate from the reading logic so it can
 # be unit-tested directly (the actual key reads need an interactive terminal).
 process_key() {
@@ -272,6 +291,7 @@ checkpoint() {
 run() {
     local filepath=$1
     prompt_shown=0
+    sc_speed_seen="$SC_SPEED"  # baseline for detecting script-set speed changes
     mapfile -t lines < "$filepath"  # Read all lines into the array 'lines'
 
     # Iterate over the pre-read array (not the file via the loop's stdin), so
@@ -283,6 +303,9 @@ run() {
     local i=0
     local line cmd
     while (( i < n )); do
+        # A script-set SC_SPEED change (from the previous step) wins over a key
+        # override; apply that before handling any new keypresses this step.
+        reconcile_speed
         # Flow control: pause/resume and speed keys take effect here, between
         # steps, so a running command is never interrupted.
         checkpoint

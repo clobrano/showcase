@@ -426,6 +426,63 @@ test_process_key_speed_fast_and_back() {
     assert_contains "'s' returns to the base SC_SPEED" "$after_slow" "7"
 }
 
+test_script_speed_change_overrides_key() {
+    # A script-set SC_SPEED change takes priority over an 'f' key override:
+    # reconcile_speed clears the override so the script's speed wins. Afterwards
+    # a fresh key press can override again.
+    local saved_speed="$SC_SPEED"
+    local saved_fast="$SC_SPEED_FAST"
+    local saved_override="$sc_speed_override"
+    local saved_seen="$sc_speed_seen"
+    SC_SPEED=10
+    SC_SPEED_FAST=40
+    sc_speed_seen=10
+    # User presses 'f' -> override to the fast preset.
+    process_key f
+    local while_fast="${sc_speed_override:-$SC_SPEED}"
+    # Script changes the speed mid-demo, then the loop reconciles it.
+    SC_SPEED=25
+    reconcile_speed
+    local after_script="${sc_speed_override:-$SC_SPEED}"
+    # A fresh 'f' after the script change overrides again.
+    process_key f
+    local fast_again="${sc_speed_override:-$SC_SPEED}"
+    # restore
+    SC_SPEED="$saved_speed"
+    SC_SPEED_FAST="$saved_fast"
+    sc_speed_override="$saved_override"
+    sc_speed_seen="$saved_seen"
+    assert_contains "'f' overrides to the fast preset" "$while_fast" "40"
+    assert_contains "script-set SC_SPEED wins over the key override" "$after_script" "25"
+    assert_contains "a fresh 'f' after a script change overrides again" "$fast_again" "40"
+}
+
+test_run_applies_script_speed_change_over_key_override() {
+    # End-to-end: with a key override in effect (as if 'f' was pressed), a
+    # script-set SC_SPEED change during the run clears the override, proving
+    # reconcile_speed is wired into run()'s loop. Run in the CURRENT shell (not
+    # a "$(...)" subshell) so the variable changes are observable. Speeds are
+    # huge so the typing is instant.
+    local f saved_speed="$SC_SPEED" saved_override="$sc_speed_override" saved_seen="$sc_speed_seen"
+    SC_SPEED=1000000
+    sc_speed_override=1234   # pretend the user pressed 'f'
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+! export SC_SPEED=999999
+# hello
+EOF
+    run "$f" >/dev/null 2>&1 </dev/null
+    rm -f "$f"
+    local override_after="${sc_speed_override:-EMPTY}"
+    local speed_after="$SC_SPEED"
+    SC_SPEED="$saved_speed"
+    sc_speed_override="$saved_override"
+    sc_speed_seen="$saved_seen"
+    assert_contains "run() clears the key override on a script speed change" \
+        "$override_after" "EMPTY"
+    assert_contains "run() applies the script-set SC_SPEED" "$speed_after" "999999"
+}
+
 test_checkpoint_does_not_consume_piped_stdin() {
     # Even with key handling enabled (SC_KEYS=1), a non-terminal stdin (a pipe,
     # as used here and by commands that read input) must never be consumed by
@@ -486,6 +543,8 @@ test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent
 test_process_key_pause_toggles
 test_process_key_speed_fast_and_back
+test_script_speed_change_overrides_key
+test_run_applies_script_speed_change_over_key_override
 test_checkpoint_does_not_consume_piped_stdin
 test_envsubst_expands_variables
 

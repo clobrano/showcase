@@ -94,12 +94,16 @@ can't "pause" a command that has already started):
 | `f` | **Faster**: use the `SC_SPEED_FAST` preset. |
 
 The base speed is `SC_SPEED` — the slow, default pace. Pressing `f` temporarily
-speeds typing up to `SC_SPEED_FAST`; pressing `s` drops back to `SC_SPEED`. The
-base is never lost, so if you change `SC_SPEED` mid-demo (with a silent
-`! export SC_SPEED=...` command), `s` returns to that new value. Speed changes
-take effect from the next typed line onward, so you can speed through
-boilerplate and slow down for the important command. A speed key pressed while
-paused is applied when you resume.
+speeds typing up to `SC_SPEED_FAST`; pressing `s` drops back to `SC_SPEED`.
+Speed changes take effect from the next typed line onward, so you can speed
+through boilerplate and slow down for the important command. A speed key pressed
+while paused is applied when you resume.
+
+**The script wins.** If the script itself changes the speed mid-demo (a silent
+`! export SC_SPEED=...` command), that takes priority over the keys: it becomes
+the new base pace and clears any `f`/`s` override in effect. You can still press
+`f`/`s` again afterwards to adjust from there, until the script changes the
+speed once more.
 
 Keys are only read from an interactive terminal, so a piped or redirected
 `stdin` (which belongs to the demo's own commands) is never consumed. Terminal
