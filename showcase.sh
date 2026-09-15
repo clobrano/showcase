@@ -62,6 +62,15 @@ term_saved=""
 prompt_active=0
 prompt_shown=0
 
+# The base-8 shell colors, mapped to their SGR foreground codes. Used by the
+# "/title" command to optionally paint a section header. Only these eight
+# names (any casing) are recognised, since they are the colors every terminal
+# supports.
+declare -A SC_COLORS=(
+    [black]=30 [red]=31 [green]=32 [yellow]=33
+    [blue]=34 [magenta]=35 [cyan]=36 [white]=37
+)
+
 usage() {
     cat <<'EOF'
 Usage: showcase.sh [--dry-run[=MODE]] SCRIPT
@@ -184,6 +193,58 @@ slowtype() {
     if [ "$pause_at_the_end" -eq 1 ]; then
         sleep 1
     fi
+}
+
+# Render a "/title" line as a decorated section header: the title text framed
+# above and below by a rule of '=' the same length as the text, each line
+# prefixed like a shell comment ("# "), e.g.
+#
+#   [demo] $ # ==========
+#   [demo] $ # My Section
+#   [demo] $ # ==========
+#
+# Unlike typed text, a header is printed instantly (no typing animation) and
+# every line is preceded by its own prompt, exactly as if the user had typed
+# and entered each line. An optional leading "[color]" token (one of the base-8
+# shell colors, see SC_COLORS) paints the header lines in that color (the
+# prompt keeps its usual color). An unknown color name is left untouched and
+# kept as part of the title, so a typo never silently swallows text.
+title() {
+    local text="$1"
+    local color_start="" color_end=""
+
+    if [[ "$text" =~ ^\[([a-zA-Z]+)\][[:space:]]*(.*)$ ]]; then
+        local name="${BASH_REMATCH[1],,}"
+        if [[ -n "${SC_COLORS[$name]:-}" ]]; then
+            color_start=$'\033['"${SC_COLORS[$name]}"'m'
+            color_end=$'\033[0m'
+            text="${BASH_REMATCH[2]}"
+        fi
+    fi
+
+    # Build a rule of '=' exactly as long as the title text (a run of spaces
+    # of that length, with each space turned into an '='). An empty title
+    # yields an empty rule.
+    local rule
+    printf -v rule '%*s' "${#text}" ''
+    rule="${rule// /=}"
+
+    local lines=("# $rule" "# $text" "# $rule")
+
+    # A header behaves like typed content, so make sure we're in prompt mode:
+    # each line then gets its own prompt (drawn lazily by ensure_prompt).
+    enter_prompt_mode
+
+    # Print each line instantly (no typing effect). Drawing the prompt before
+    # each line and ending the line with a newline (so nothing dangles) makes
+    # the prompt visible on every line, as if the user typed and entered each.
+    local idx
+    for idx in "${!lines[@]}"; do
+        ensure_prompt
+        printf '%s%s%s\n' "$color_start" "${lines[idx]}" "$color_end"
+        prompt_shown=0
+    done
+    sleep 1
 }
 
 slowtype_and_run() {
@@ -431,6 +492,13 @@ run() {
                 ensure_prompt
                 echo
                 prompt_shown=0
+                ;;
+            /title\ *)
+                # A "/title" line renders a decorated section header. It may
+                # start with an optional "[color]" token. (Checked before the
+                # '//' comment case below, which needs two leading slashes and
+                # so never matches "/title".)
+                title "${line#/title }"
                 ;;
             //*)
                 # lines starting with // are comments and are ignored

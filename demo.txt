@@ -11,6 +11,9 @@
 # Let's try that.
 ! sleep 1
 
+/title [cyan] Live command execution
+! sleep 1
+
 # Lines starting with a dollar sign "$" are treated as commands.
 # The command itself is displayed, just like you'd type it in your terminal...
 

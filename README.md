@@ -60,8 +60,40 @@ commands to be shown without executing.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
 * `!` Lines starting with an exclamation mark are executed as shell commands, but the command line itself is **not displayed** (its output, if any, still appears). Useful to set up the demo environment and introduce pauses (e.g. `sleep 1`), or to run a command whose output you want without showing the command that produced it.
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any non-empty line that does not start with one of the markers above is also ignored.)
+* `/title` Lines starting with `/title` render a decorated **section header** (see [Section titles](#section-titles) below).
 * `/pause`, `/slow`, `/fast` Lines that are one of these **directives** control playback from within the script (see [Script directives](#script-directives) below). They are never displayed.
 * An **empty line** renders as an empty line during replay, as if the user had pressed Enter at the prompt. Use blank lines in your script to add breathing room to the demo.
+
+### Section titles
+
+A `/title` line renders a nicer section header: the text is framed above and
+below by a rule of `=` the same length as the text, each line prefixed like a
+shell comment (`# `). Unlike typed text, a header is printed **instantly** (no
+typing animation) and the prompt is shown on every line, as if the user had
+typed and entered each line. For example:
+
+```
+/title What this section is about
+```
+
+renders as:
+
+```
+[demo] $ # ==========================
+[demo] $ # What this section is about
+[demo] $ # ==========================
+```
+
+You can paint the whole header in one of the eight base shell colors
+(`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) by
+adding a `[color]` token right after `/title`:
+
+```
+/title [green] What this section is about
+```
+
+If the color name isn't recognised, the `[name]` token is left untouched and
+kept as part of the title, so a typo never silently drops text.
 
 ### Multiline commands
 

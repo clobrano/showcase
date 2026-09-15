@@ -410,6 +410,90 @@ EOF
     rm -f "$vis" "$sil"
 }
 
+test_title_renders_framed_header() {
+    # A "/title" line renders the text framed above and below by a rule of
+    # '=' the same length as the text, each line prefixed with "# " and
+    # preceded by the prompt (as if the user typed and entered each line).
+    local out
+    SC_PROMPT="P> "
+    out="$(run_script <<'EOF'
+/title Hello World
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    # "Hello World" is 11 chars, so the rule is 11 '=' characters, and every
+    # header line is preceded by the prompt.
+    assert_contains "'/title' frames the text with an equal-length rule" \
+        "$out" $'P> # ===========\nP> # Hello World\nP> # ===========\n'
+}
+
+test_title_prompt_shown_on_each_line() {
+    # Regression: the header must not be a single typed block; the prompt has
+    # to appear on every one of the three header lines.
+    local out prompts
+    SC_PROMPT="PMK> "
+    out="$(run_script <<'EOF'
+/title Hi
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    # Count how many header lines begin with the prompt. Expect 3 (one per
+    # header line); a single typed block would show only 1.
+    prompts="$(printf '%s\n' "$out" | grep -c '^PMK> # ')"
+    if [[ "$prompts" -eq 3 ]]; then
+        _pass "'/title' shows the prompt on every header line"
+    else
+        _fail "'/title' shows the prompt on every header line" \
+            "expected 3 prompt-prefixed header lines, got $prompts"
+    fi
+}
+
+test_title_rule_matches_text_length() {
+    # The rule length tracks the (possibly different) text length exactly.
+    local out
+    SC_PROMPT="P> "
+    out="$(run_script <<'EOF'
+/title Hi
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    assert_contains "'/title' rule matches a short title's length" \
+        "$out" $'P> # ==\nP> # Hi\nP> # ==\n'
+}
+
+test_title_color_wraps_the_header() {
+    # A "[color]" token paints each header line: the green SGR code (\033[32m)
+    # precedes the "# ..." content and a reset (\033[0m) follows it, while the
+    # prompt keeps its usual color and the color name token is stripped.
+    local out
+    out="$(run_script <<'EOF'
+/title [green] Colored
+EOF
+)"
+    assert_contains "'/title [green]' wraps a header line in green + reset" \
+        "$out" $'\033[32m# Colored\033[0m'
+    assert_not_contains "'/title [green]' does not show the color token" \
+        "$out" "[green]"
+    # The rule is sized to the stripped text ("Colored" = 7 chars), not the
+    # original "[green] Colored".
+    assert_contains "'/title [green]' sizes the rule to the stripped text" \
+        "$out" $'\033[32m# =======\033[0m'
+}
+
+test_title_unknown_color_is_kept_as_text() {
+    # An unrecognised color name is not treated as a color: no escape codes are
+    # emitted and the "[name]" token stays as part of the title.
+    local out
+    out="$(run_script <<'EOF'
+/title [banana] Fruit
+EOF
+)"
+    assert_not_contains "'/title' with unknown color emits no color code" \
+        "$out" $'\033['
+    assert_contains "'/title' with unknown color keeps the token as text" \
+        "$out" "# [banana] Fruit"
+}
+
 test_process_key_pause_toggles() {
     # The 'p' key toggles the paused flag on and off.
     paused=0
@@ -604,6 +688,11 @@ test_backslash_continuation_tolerates_trailing_whitespace
 test_trailing_pipe_continues_command
 test_trailing_logical_operator_continues_command
 test_custom_prompt_is_used
+test_title_renders_framed_header
+test_title_prompt_shown_on_each_line
+test_title_rule_matches_text_length
+test_title_color_wraps_the_header
+test_title_unknown_color_is_kept_as_text
 test_dry_run_all_skips_visible_and_silent_execution
 test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent
