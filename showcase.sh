@@ -130,14 +130,16 @@ slowtype() {
 # above and below by a rule of '=' the same length as the text, each line
 # prefixed like a shell comment ("# "), e.g.
 #
-#   # ==========
-#   # My Section
-#   # ==========
+#   [demo] $ # ==========
+#   [demo] $ # My Section
+#   [demo] $ # ==========
 #
-# An optional leading "[color]" token (one of the base-8 shell colors, see
-# SC_COLORS) paints the whole header in that color. An unknown color name is
-# left untouched and kept as part of the title, so a typo never silently
-# swallows text.
+# Unlike typed text, a header is printed instantly (no typing animation) and
+# every line is preceded by the prompt, exactly as if the user had typed and
+# entered each line. An optional leading "[color]" token (one of the base-8
+# shell colors, see SC_COLORS) paints the header lines in that color (the
+# prompt keeps its usual color). An unknown color name is left untouched and
+# kept as part of the title, so a typo never silently swallows text.
 title() {
     local text="$1"
     local color_start="" color_end=""
@@ -158,13 +160,24 @@ title() {
     printf -v rule '%*s' "${#text}" ''
     rule="${rule// /=}"
 
-    # Emit the color prefix (if any) before the typing effect so the escape
-    # sequence itself is not "typed" out character by character, then reset
-    # after the animated header. All three lines are typed as one block.
-    [[ -n "$color_start" ]] && printf '%s' "$color_start"
-    printf '# %s\n# %s\n# %s\n' "$rule" "$text" "$rule" | type_effect
-    [[ -n "$color_end" ]] && printf '%s' "$color_end"
+    local lines=("# $rule" "# $text" "# $rule")
 
+    # A prompt is normally already on screen (drawn by the previous line); if
+    # not, draw one so the header's first line still starts at a prompt.
+    if [[ "$prompt_shown" -ne 1 ]]; then
+        echo -n "$SC_PROMPT"
+        prompt_shown=1
+    fi
+
+    # Print each line instantly (no typing effect), redrawing the prompt before
+    # every line after the first, so the prompt is visible on every line.
+    local idx
+    for idx in "${!lines[@]}"; do
+        (( idx > 0 )) && echo -n "$SC_PROMPT"
+        printf '%s%s%s\n' "$color_start" "${lines[idx]}" "$color_end"
+    done
+
+    # Leave a fresh prompt on screen for the next line.
     echo -n "$SC_PROMPT"
     prompt_shown=1
     sleep 1

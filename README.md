@@ -67,7 +67,9 @@ commands to be shown without executing.
 
 A `/title` line renders a nicer section header: the text is framed above and
 below by a rule of `=` the same length as the text, each line prefixed like a
-shell comment (`# `). For example:
+shell comment (`# `). Unlike typed text, a header is printed **instantly** (no
+typing animation) and the prompt is shown on every line, as if the user had
+typed and entered each line. For example:
 
 ```
 /title What this section is about
@@ -76,9 +78,9 @@ shell comment (`# `). For example:
 renders as:
 
 ```
-# ==========================
-# What this section is about
-# ==========================
+[demo] $ # ==========================
+[demo] $ # What this section is about
+[demo] $ # ==========================
 ```
 
 You can paint the whole header in one of the eight base shell colors
