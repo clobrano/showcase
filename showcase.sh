@@ -16,6 +16,15 @@
 # before the prompt is configured don't print a stray default prompt.
 prompt_shown=0
 
+# The base-8 shell colors, mapped to their SGR foreground codes. Used by the
+# "/title" command to optionally paint a section header. Only these eight
+# names (any casing) are recognised, since they are the colors every terminal
+# supports.
+declare -A SC_COLORS=(
+    [black]=30 [red]=31 [green]=32 [yellow]=33
+    [blue]=34 [magenta]=35 [cyan]=36 [white]=37
+)
+
 usage() {
     cat <<'EOF'
 Usage: showcase.sh [--dry-run[=MODE]] SCRIPT
@@ -117,6 +126,50 @@ slowtype() {
     fi
 }
 
+# Render a "/title" line as a decorated section header: the title text framed
+# above and below by a rule of '=' the same length as the text, each line
+# prefixed like a shell comment ("# "), e.g.
+#
+#   # ==========
+#   # My Section
+#   # ==========
+#
+# An optional leading "[color]" token (one of the base-8 shell colors, see
+# SC_COLORS) paints the whole header in that color. An unknown color name is
+# left untouched and kept as part of the title, so a typo never silently
+# swallows text.
+title() {
+    local text="$1"
+    local color_start="" color_end=""
+
+    if [[ "$text" =~ ^\[([a-zA-Z]+)\][[:space:]]*(.*)$ ]]; then
+        local name="${BASH_REMATCH[1],,}"
+        if [[ -n "${SC_COLORS[$name]:-}" ]]; then
+            color_start=$'\033['"${SC_COLORS[$name]}"'m'
+            color_end=$'\033[0m'
+            text="${BASH_REMATCH[2]}"
+        fi
+    fi
+
+    # Build a rule of '=' exactly as long as the title text (a run of spaces
+    # of that length, with each space turned into an '='). An empty title
+    # yields an empty rule.
+    local rule
+    printf -v rule '%*s' "${#text}" ''
+    rule="${rule// /=}"
+
+    # Emit the color prefix (if any) before the typing effect so the escape
+    # sequence itself is not "typed" out character by character, then reset
+    # after the animated header. All three lines are typed as one block.
+    [[ -n "$color_start" ]] && printf '%s' "$color_start"
+    printf '# %s\n# %s\n# %s\n' "$rule" "$text" "$rule" | type_effect
+    [[ -n "$color_end" ]] && printf '%s' "$color_end"
+
+    echo -n "$SC_PROMPT"
+    prompt_shown=1
+    sleep 1
+}
+
 slowtype_and_run() {
     local command=$*
     slowtype "${command}" 0
@@ -216,6 +269,13 @@ run() {
                     # don't print a stray prompt.
                     echo
                 fi
+                ;;
+            /title\ *)
+                # A "/title" line renders a decorated section header. It may
+                # start with an optional "[color]" token. (Checked before the
+                # '//' comment case below, which needs two leading slashes and
+                # so never matches "/title".)
+                title "${line#/title }"
                 ;;
             //*)
                 # lines starting with // are comments and are ignored

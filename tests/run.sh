@@ -389,6 +389,67 @@ EOF
     rm -f "$vis" "$sil"
 }
 
+test_title_renders_framed_header() {
+    # A "/title" line renders the text framed above and below by a rule of
+    # '=' the same length as the text, each line prefixed with "# ".
+    local out
+    out="$(run_script <<'EOF'
+/title Hello World
+EOF
+)"
+    # "Hello World" is 11 chars, so the rule is 11 '=' characters.
+    assert_contains "'/title' frames the text with an equal-length rule" \
+        "$out" $'# ===========\n# Hello World\n# ===========\n'
+}
+
+test_title_rule_matches_text_length() {
+    # The rule length tracks the (possibly different) text length exactly.
+    local out
+    out="$(run_script <<'EOF'
+/title Hi
+EOF
+)"
+    assert_contains "'/title' rule matches a short title's length" \
+        "$out" $'# ==\n# Hi\n# ==\n'
+}
+
+test_title_color_wraps_the_header() {
+    # A "[color]" token paints the whole header: the green SGR code (\033[32m)
+    # precedes the header and a reset (\033[0m) follows it, and the color name
+    # token is stripped from the visible title.
+    local out
+    out="$(run_script <<'EOF'
+/title [green] Colored
+EOF
+)"
+    assert_contains "'/title [green]' emits the green color code" \
+        "$out" $'\033[32m'
+    assert_contains "'/title [green]' resets the color after the header" \
+        "$out" $'\033[0m'
+    assert_contains "'/title [green]' strips the color token from the text" \
+        "$out" $'# Colored\n'
+    assert_not_contains "'/title [green]' does not show the color token" \
+        "$out" "[green]"
+    # The rule is sized to the stripped text ("Colored" = 7 chars), not the
+    # original "[green] Colored".
+    assert_contains "'/title [green]' sizes the rule to the stripped text" \
+        "$out" $'# =======\n# Colored\n# ======='
+}
+
+test_title_unknown_color_is_kept_as_text() {
+    # An unrecognised color name is not treated as a color: no escape codes are
+    # emitted and the "[name]" token stays as part of the title.
+    local out
+    out="$(run_script <<'EOF'
+/title [banana] Fruit
+EOF
+)"
+    assert_not_contains "'/title' with unknown color emits no color code" \
+        "$out" $'\033['
+    assert_contains "'/title' with unknown color keeps the token as text" \
+        "$out" "# [banana] Fruit"
+}
+
 test_envsubst_expands_variables() {
     if ! command -v envsubst >/dev/null 2>&1; then
         printf '  \033[33mskip\033[0m envsubst variable expansion (envsubst not installed)\n'
@@ -425,6 +486,10 @@ test_backslash_continuation_tolerates_trailing_whitespace
 test_trailing_pipe_continues_command
 test_trailing_logical_operator_continues_command
 test_custom_prompt_is_used
+test_title_renders_framed_header
+test_title_rule_matches_text_length
+test_title_color_wraps_the_header
+test_title_unknown_color_is_kept_as_text
 test_dry_run_all_skips_visible_and_silent_execution
 test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent

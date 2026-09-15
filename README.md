@@ -60,7 +60,37 @@ commands to be shown without executing.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
 * `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any non-empty line that does not start with one of the markers above is also ignored.)
+* `/title` Lines starting with `/title` render a decorated **section header** (see [Section titles](#section-titles) below).
 * An **empty line** renders as an empty line during replay, as if the user had pressed Enter at the prompt. Use blank lines in your script to add breathing room to the demo.
+
+### Section titles
+
+A `/title` line renders a nicer section header: the text is framed above and
+below by a rule of `=` the same length as the text, each line prefixed like a
+shell comment (`# `). For example:
+
+```
+/title What this section is about
+```
+
+renders as:
+
+```
+# ==========================
+# What this section is about
+# ==========================
+```
+
+You can paint the whole header in one of the eight base shell colors
+(`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) by
+adding a `[color]` token right after `/title`:
+
+```
+/title [green] What this section is about
+```
+
+If the color name isn't recognised, the `[name]` token is left untouched and
+kept as part of the title, so a typo never silently drops text.
 
 ### Multiline commands
 
