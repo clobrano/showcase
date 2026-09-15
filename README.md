@@ -50,7 +50,7 @@ commands to be shown without executing.
 
 * **Script-Driven Demos:** Create demos by writing a simple script. Lines in the script are "typed" out as if a user were entering them.
 * **Live Command Execution:** Embed and execute shell commands **live** during the demo. The command is displayed, followed by its **real-time** output. This ensures the demo reflects the current system state, not a pre-recorded result.
-* **Silent Commands:** Execute commands without displaying their output, useful for setup and cleanup tasks within the demo.
+* **Silent Commands:** Execute commands without displaying the *command line*, useful for setup and cleanup (e.g. `export`, `sleep`) — their output, if any, still appears (so a progress command like a `watch`-style loop works).
 * **Repeatable Demos:** Ensure consistent and error-free demonstrations every time. You can test and refine your script before any presentation.
 * **Easy Preparation:** Demos are much easier and faster to prepare compared to live typing, reducing the risk of mistakes and saving time.
 
@@ -58,9 +58,10 @@ commands to be shown without executing.
 
 * `#` Lines starting with a hashtag are displayed as if being typed.
 * `$` Lines starting with a dollar sign are executed as shell commands **live**. The command and its output are displayed.
-* `!` Lines starting with an exclamation mark are executed as shell commands, but the output is suppressed. Useful to setup the demo environment and introduce the necessary pauses (e.g. `sleep 1`).
+* `!` Lines starting with an exclamation mark are executed as shell commands, but the command line itself is **not displayed** (its output, if any, still appears). Useful to set up the demo environment and introduce pauses (e.g. `sleep 1`), or to run a command whose output you want without showing the command that produced it.
 * `//` Lines starting with a double slash are comments: they are ignored and never displayed. (Any non-empty line that does not start with one of the markers above is also ignored.)
 * `/title` Lines starting with `/title` render a decorated **section header** (see [Section titles](#section-titles) below).
+* `/pause`, `/slow`, `/fast` Lines that are one of these **directives** control playback from within the script (see [Script directives](#script-directives) below). They are never displayed.
 * An **empty line** renders as an empty line during replay, as if the user had pressed Enter at the prompt. Use blank lines in your script to add breathing room to the demo.
 
 ### Section titles
@@ -112,12 +113,79 @@ $ osac create computeinstance \
   osac get computeinstance default-vm --watch
 ```
 
+### Playback controls (keys)
+
+During a live demo you can drive the flow from the keyboard. Handling happens
+at checkpoints **between** steps, so a command that is already running is never
+interrupted — only the visible/silent flow is affected (as you'd expect: you
+can't "pause" a command that has already started):
+
+| Key | Action |
+| --- | ------ |
+| `p` | Pause / resume the demo. Pressing `p` while a command is being typed out stops the demo **just before that command runs**, so it is shown but not executed until you press `p` again. |
+| `s` | **Slower**: use the base typing speed `SC_SPEED` (the default pace). |
+| `f` | **Faster**: use the `SC_SPEED_FAST` preset. |
+
+The base speed is `SC_SPEED` — the slow, default pace. Pressing `f` temporarily
+speeds typing up to `SC_SPEED_FAST`; pressing `s` drops back to `SC_SPEED`.
+Speed changes take effect from the next typed line onward, so you can speed
+through boilerplate and slow down for the important command. A speed key pressed
+while paused is applied when you resume.
+
+**The script wins.** If the script itself changes the speed mid-demo (a silent
+`! export SC_SPEED=...` command), that takes priority over the keys: it becomes
+the new base pace and clears any `f`/`s` override in effect. You can still press
+`f`/`s` again afterwards to adjust from there, until the script changes the
+speed once more.
+
+While the demo is paused (via the `p` key or the `/pause` directive), a subtle
+dimmed `-- paused --` cue is shown at the cursor and disappears the moment you
+resume, so it's clear the demo is waiting for you.
+
+Keys are only read from an interactive terminal, so a piped or redirected
+`stdin` (which belongs to the demo's own commands) is never consumed. Terminal
+echo is turned off while the tool is in control so your control keys don't
+appear on screen, and it is restored around every live command (so interactive
+programs still work) and on exit. Set `SC_KEYS=0` to disable key handling
+entirely.
+
+### Script directives
+
+You can also bake the same controls into the script, on their own line, so you
+don't have to press the key at exactly the right moment. Directives are never
+displayed:
+
+| Directive | Action |
+| --------- | ------ |
+| `/pause`  | Stop the demo at this point and wait until you press `p`. This is the scripted way to break for a talking point — the demo continues only when you resume it. |
+| `/slow`   | Switch to the base typing speed `SC_SPEED` (same as the `s` key). |
+| `/fast`   | Switch to the `SC_SPEED_FAST` preset (same as the `f` key). |
+
+For example:
+
+```
+# Here's the key command of the whole demo.
+/pause
+$ deploy --production
+/fast
+# ...and now the boring cleanup, sped up.
+$ rm -rf ./tmp
+```
+
+`/pause` needs a terminal to read the `p` key from, so on a **non-interactive**
+run (piped/redirected `stdin`, or `--dry-run` without a terminal) it is skipped
+rather than waiting forever — the demo simply continues. Like the keys, a
+`/fast` speed change is superseded the moment the script changes `SC_SPEED`
+itself.
+
 ## Configuration
 
 You can customize the demo's behavior using environment variables:
 
 * `SC_PROMPT`: Sets the prompt string displayed before commands (e.g., `$ `, `>` ) (default `[showcase user]`).
-* `SC_SPEED`: Controls the typing speed (default = 10).
+* `SC_SPEED`: The base typing speed; a higher number types faster (default = 10). This is the "slow" pace the `s` key returns to.
+* `SC_SPEED_FAST`: The faster typing speed the `f` key switches to (default = 40).
+* `SC_KEYS`: Set to `0` to disable the interactive [playback keys](#playback-controls-keys) (default = enabled). See above.
 * `SC_DRY_RUN`: Skips execution of commands while still printing them (`all`,
   `visible`, or `silent`; empty/unset means execute everything). Equivalent to
   the `--dry-run[=MODE]` flag. See [Dry run](#dry-run) above.
