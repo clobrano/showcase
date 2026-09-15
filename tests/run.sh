@@ -138,6 +138,27 @@ EOF
     rm -f "$marker"
 }
 
+test_silent_command_output_starts_on_fresh_line() {
+    # Regression: a silent '!' command's output must start on its own line, not
+    # glued onto the prompt from the previous line — otherwise output that uses
+    # '\r' (e.g. a progress line like watch.sh) overwrites the prompt. The
+    # visible '$' command after it must also still show its own prompt.
+    local out
+    SC_PROMPT="P> "
+    out="$(run_script <<'EOF'
+# narration
+! printf 'SILENT_OUT\n'
+$ printf 'CMDTOK\n'
+EOF
+)"
+    SC_PROMPT="[showcase user] $ "  # restore default for later tests
+    assert_contains "silent command output is shown" "$out" "SILENT_OUT"
+    assert_not_contains "silent output is not glued to the prompt" \
+        "$out" "P> SILENT_OUT"
+    assert_contains "the command after a silent one keeps its prompt" \
+        "$out" "P> printf 'CMDTOK"
+}
+
 test_slash_comment_is_ignored() {
     local out
     out="$(run_script <<'EOF'
@@ -389,6 +410,163 @@ EOF
     rm -f "$vis" "$sil"
 }
 
+test_process_key_pause_toggles() {
+    # The 'p' key toggles the paused flag on and off.
+    paused=0
+    process_key p
+    local after_first="$paused"
+    process_key p
+    local after_second="$paused"
+    paused=0  # restore for later tests
+    assert_contains "'p' pauses (0 -> 1)" "$after_first" "1"
+    assert_contains "'p' again resumes (1 -> 0)" "$after_second" "0"
+}
+
+test_process_key_speed_fast_and_back() {
+    # 'f' bumps the effective speed to the SC_SPEED_FAST preset via an override;
+    # 's' clears the override so the effective speed returns to the base
+    # SC_SPEED. The base SC_SPEED is never mutated, so a mid-demo change to it is
+    # preserved.
+    local saved_speed="$SC_SPEED"
+    local saved_fast="$SC_SPEED_FAST"
+    local saved_override="$sc_speed_override"
+    SC_SPEED=7
+    SC_SPEED_FAST=99
+    sc_speed_override=""
+    process_key f
+    local after_fast="${sc_speed_override:-$SC_SPEED}"
+    local base_after_fast="$SC_SPEED"
+    process_key s
+    local after_slow="${sc_speed_override:-$SC_SPEED}"
+    # restore
+    SC_SPEED="$saved_speed"
+    SC_SPEED_FAST="$saved_fast"
+    sc_speed_override="$saved_override"
+    assert_contains "'f' uses the fast preset" "$after_fast" "99"
+    assert_contains "'f' leaves the base SC_SPEED untouched" "$base_after_fast" "7"
+    assert_contains "'s' returns to the base SC_SPEED" "$after_slow" "7"
+}
+
+test_script_speed_change_overrides_key() {
+    # A script-set SC_SPEED change takes priority over an 'f' key override:
+    # reconcile_speed clears the override so the script's speed wins. Afterwards
+    # a fresh key press can override again.
+    local saved_speed="$SC_SPEED"
+    local saved_fast="$SC_SPEED_FAST"
+    local saved_override="$sc_speed_override"
+    local saved_seen="$sc_speed_seen"
+    SC_SPEED=10
+    SC_SPEED_FAST=40
+    sc_speed_seen=10
+    # User presses 'f' -> override to the fast preset.
+    process_key f
+    local while_fast="${sc_speed_override:-$SC_SPEED}"
+    # Script changes the speed mid-demo, then the loop reconciles it.
+    SC_SPEED=25
+    reconcile_speed
+    local after_script="${sc_speed_override:-$SC_SPEED}"
+    # A fresh 'f' after the script change overrides again.
+    process_key f
+    local fast_again="${sc_speed_override:-$SC_SPEED}"
+    # restore
+    SC_SPEED="$saved_speed"
+    SC_SPEED_FAST="$saved_fast"
+    sc_speed_override="$saved_override"
+    sc_speed_seen="$saved_seen"
+    assert_contains "'f' overrides to the fast preset" "$while_fast" "40"
+    assert_contains "script-set SC_SPEED wins over the key override" "$after_script" "25"
+    assert_contains "a fresh 'f' after a script change overrides again" "$fast_again" "40"
+}
+
+test_run_applies_script_speed_change_over_key_override() {
+    # End-to-end: with a key override in effect (as if 'f' was pressed), a
+    # script-set SC_SPEED change during the run clears the override, proving
+    # reconcile_speed is wired into run()'s loop. Run in the CURRENT shell (not
+    # a "$(...)" subshell) so the variable changes are observable. Speeds are
+    # huge so the typing is instant.
+    local f saved_speed="$SC_SPEED" saved_override="$sc_speed_override" saved_seen="$sc_speed_seen"
+    SC_SPEED=1000000
+    sc_speed_override=1234   # pretend the user pressed 'f'
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+! export SC_SPEED=999999
+# hello
+EOF
+    run "$f" >/dev/null 2>&1 </dev/null
+    rm -f "$f"
+    local override_after="${sc_speed_override:-EMPTY}"
+    local speed_after="$SC_SPEED"
+    SC_SPEED="$saved_speed"
+    sc_speed_override="$saved_override"
+    sc_speed_seen="$saved_seen"
+    assert_contains "run() clears the key override on a script speed change" \
+        "$override_after" "EMPTY"
+    assert_contains "run() applies the script-set SC_SPEED" "$speed_after" "999999"
+}
+
+test_pause_directive_does_not_hang_without_tty() {
+    # A '/pause' directive must not block when a key can't arrive (stdin is not
+    # a terminal), so a non-interactive run never hangs. The line after it is
+    # still processed. Uses </dev/null so stdin is definitely not a terminal,
+    # even when the suite is run from an interactive shell.
+    local f out
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+# BEFORE_PAUSE
+/pause
+# AFTER_PAUSE
+EOF
+    out="$(run "$f" </dev/null 2>&1)"
+    rm -f "$f"
+    assert_contains "content before '/pause' is shown" "$out" "BEFORE_PAUSE"
+    assert_contains "'/pause' does not hang a non-interactive run" \
+        "$out" "AFTER_PAUSE"
+}
+
+test_fast_slow_directives_set_speed() {
+    # The '/fast' and '/slow' directives are the scripted equivalents of the
+    # 'f'/'s' keys: '/fast' sets the fast override, '/slow' clears it. Run in the
+    # CURRENT shell (not a "$(...)" subshell) so the variable changes are
+    # observable, and </dev/null so any checkpoint is a no-op.
+    local f saved_speed="$SC_SPEED" saved_fast="$SC_SPEED_FAST"
+    local saved_override="$sc_speed_override" saved_seen="$sc_speed_seen"
+    SC_SPEED=1000000
+    SC_SPEED_FAST=4242
+    sc_speed_override=""
+    f="$(mktemp)"
+    printf '/fast\n' >"$f"
+    run "$f" </dev/null >/dev/null 2>&1
+    local after_fast="${sc_speed_override:-EMPTY}"
+    sc_speed_override=4242  # ensure /slow has something to clear
+    printf '/slow\n' >"$f"
+    run "$f" </dev/null >/dev/null 2>&1
+    local after_slow="${sc_speed_override:-EMPTY}"
+    rm -f "$f"
+    SC_SPEED="$saved_speed"; SC_SPEED_FAST="$saved_fast"
+    sc_speed_override="$saved_override"; sc_speed_seen="$saved_seen"
+    assert_contains "'/fast' sets the fast override" "$after_fast" "4242"
+    assert_contains "'/slow' clears the override (back to base)" "$after_slow" "EMPTY"
+}
+
+test_checkpoint_does_not_consume_piped_stdin() {
+    # Even with key handling enabled (SC_KEYS=1), a non-terminal stdin (a pipe,
+    # as used here and by commands that read input) must never be consumed by
+    # the flow-control checkpoint: the '-t 0' terminal guard ensures keys are
+    # only ever read from an interactive terminal. A '$ cat' command must still
+    # echo the caller's piped token, not lose it to a checkpoint read.
+    local f out saved_keys="${SC_KEYS:-1}"
+    SC_KEYS=1
+    f="$(mktemp)"
+    cat >"$f" <<'EOF'
+$ cat
+EOF
+    out="$(printf 'KEEP_STDIN_TOKEN\n' | run "$f" 2>&1)"
+    rm -f "$f"
+    SC_KEYS="$saved_keys"
+    assert_contains "checkpoint does not consume piped stdin (keys enabled)" \
+        "$out" "KEEP_STDIN_TOKEN"
+}
+
 test_envsubst_expands_variables() {
     if ! command -v envsubst >/dev/null 2>&1; then
         printf '  \033[33mskip\033[0m envsubst variable expansion (envsubst not installed)\n'
@@ -412,6 +590,7 @@ test_typed_text_is_shown
 test_dollar_command_is_displayed_and_executed
 test_silent_command_is_not_displayed_but_output_shows
 test_silent_command_side_effect_runs
+test_silent_command_output_starts_on_fresh_line
 test_slash_comment_is_ignored
 test_commands_read_callers_stdin_not_the_script
 test_unprefixed_line_is_ignored
@@ -428,6 +607,13 @@ test_custom_prompt_is_used
 test_dry_run_all_skips_visible_and_silent_execution
 test_dry_run_visible_skips_only_visible
 test_dry_run_silent_skips_only_silent
+test_process_key_pause_toggles
+test_process_key_speed_fast_and_back
+test_script_speed_change_overrides_key
+test_run_applies_script_speed_change_over_key_override
+test_pause_directive_does_not_hang_without_tty
+test_fast_slow_directives_set_speed
+test_checkpoint_does_not_consume_piped_stdin
 test_envsubst_expands_variables
 
 echo
