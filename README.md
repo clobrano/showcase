@@ -6,45 +6,93 @@ This tool simplifies the creation of engaging and repeatable software demonstrat
 
 ## Requirements
 
-* **bash** (4.0+ for `mapfile`).
-* **pv** — used to animate the "typing" effect. Optional: if `pv` is not
-  installed the text is printed instantly instead of being animated.
-* **envsubst** (from `gettext`) — used to expand environment variables inside
-  script lines. Optional: if it is not installed, lines are used verbatim.
+Showcase needs **Bash 4.0+**. **pv** animates typed text and **envsubst** (from
+gettext) expands environment variables; both are optional, and Showcase keeps
+working without them.
 
-On Debian/Ubuntu: `sudo apt-get install pv gettext-base`.
+Recording also needs **Node.js 22+**, **ttyd**, **FFmpeg**, and **Google Chrome
+or Chromium**. Showcase checks the selected FFmpeg encoders and GIF filters
+before starting the browser. Install the packages using your distribution’s
+package manager. On Debian or Ubuntu, `sudo apt-get install pv gettext-base`
+installs the optional playback helpers.
+
+The FFmpeg support depends on the file extension:
+
+| Output | FFmpeg support required | Result |
+| --- | --- | --- |
+| `.webm` | `libvpx-vp9` encoder | VP9 video |
+| `.mp4` | `libx264` encoder | H.264 video for common players and web playback |
+| `.gif` | `ffv1` and `gif` encoders, plus `palettegen` and `paletteuse` filters | Looping 15 fps animated GIF |
+
+If Chrome or Chromium is not found automatically, set **SC_CHROME** to its
+executable path. Set **FFMPEG** if the FFmpeg executable is not named `ffmpeg`
+or is not in your PATH.
 
 ## Usage
 
-```bash
-./showcase.sh demo.txt
-```
+Run a demo script with:
+
+    ./showcase.sh demo.txt
 
 ### Dry run
 
-Use `--dry-run` to rehearse a demo without touching the system: the commands
-are still printed on screen, but their execution is skipped. Because a script
-has two kinds of commands — visible (`$`) and silent (`!`) — you can choose
-which kind to skip:
+Use `--dry-run` to rehearse a demo without touching the system. All commands
+are shown but skipped by default:
 
-```bash
-./showcase.sh --dry-run demo.txt          # skip every command ("all")
-./showcase.sh --dry-run=all demo.txt      # same as above
-./showcase.sh --dry-run=visible demo.txt  # skip only the visible '$' commands
-./showcase.sh --dry-run=silent demo.txt   # skip only the silent '!' commands
-```
+    ./showcase.sh --dry-run demo.txt
+    ./showcase.sh --dry-run=visible demo.txt
+    ./showcase.sh --dry-run=silent demo.txt
 
-The same behavior can be set from the environment with `SC_DRY_RUN` (`all`,
-`visible`, or `silent`):
+The modes are `all` (skip both visible `$` and silent `!` commands), `visible`
+(skip only `$` commands), and `silent` (skip only `!` commands). You can also
+set the mode with `SC_DRY_RUN`, for example `SC_DRY_RUN=visible`. Silent
+commands often prepare the demo environment, so use `visible` when you want
+setup to run while reviewing the visible commands without executing them.
 
-```bash
-SC_DRY_RUN=visible ./showcase.sh demo.txt
-```
+### Record a demo
 
-Note that silent commands are often used for setup (e.g. `export SC_PROMPT=...`,
-`sleep`); skipping them (`all` or `silent`) also skips that setup. Use
-`--dry-run=visible` when you want the setup to run but the visible demo
-commands to be shown without executing.
+Pass a filename ending in `.webm`, `.mp4`, or `.gif`. Showcase chooses the
+recording format from that extension and runs the demo once:
+
+    ./showcase.sh --record demo.webm demo.txt
+    ./showcase.sh --record demo.mp4 demo.txt
+    ./showcase.sh --record demo.gif demo.txt
+
+The extension is case-insensitive. An existing output file is kept untouched;
+choose a new filename for each recording. Unsupported extensions fail with a
+message listing the supported formats.
+
+The recording opens the demo in a visible browser window. You can follow the
+demo as it runs, and the usual `p`, `s`, and `f` playback keys still work.
+Showcase runs the script in its normal Bash runner, so commands execute live
+once during capture. Recording captures the browser’s terminal page through
+Chrome DevTools rather than recording the desktop.
+
+#### Configure the recorded terminal
+
+Use `--font-size`, `--width`, and `--height` to adjust the terminal display and
+recording dimensions. Width and height are in pixels. Defaults are 1280 by 720
+pixels with a 16 pixel font. Dimensions must be positive even numbers.
+
+    ./showcase.sh --record demo.mp4 --font-size 18 --width 1280 --height 720 demo.txt
+
+These settings work with every output format. `--record` accepts the filename
+as a separate argument or with equals syntax, for example
+`--record=demo.mp4`.
+
+#### Format details
+
+WebM records directly to VP9. MP4 records to H.264 and moves the MP4 index to
+the start of the file for faster web playback. GIF capture uses PNG frames and
+a temporary lossless video, then builds a shared color palette for the final
+animation. GIF palette conversion happens after the demo finishes, so a longer
+demo can take extra time to finalize. The animation loops continuously and is
+encoded at 15 frames per second.
+
+All formats use the same visible terminal session, browser window, dimensions,
+font size, and playback controls. The selected encoder and any required GIF
+filters are checked before recording starts; missing support produces a
+specific error with the required FFmpeg component.
 
 ## Key Features
 

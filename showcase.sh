@@ -73,13 +73,17 @@ declare -A SC_COLORS=(
 
 usage() {
     cat <<'EOF'
-Usage: showcase.sh [--dry-run[=MODE]] SCRIPT
+Usage: showcase.sh [OPTIONS] SCRIPT
 
 Options:
   --dry-run[=MODE]  Show commands without executing them. MODE is one of:
                       all      skip every command (both '$' and '!') [default]
                       visible  skip only the visible '$' commands
                       silent   skip only the silent '!' commands
+  --record FILE       Record the visible demo to .webm, .mp4, or .gif.
+  --font-size N       Terminal font size for recording (default: 16).
+  --width N           Recorded terminal width in pixels (default: 1280).
+  --height N          Recorded terminal height in pixels (default: 720).
   -h, --help        Show this help and exit.
 
 Playback keys (interactive terminal only; set SC_KEYS=0 to disable):
@@ -98,11 +102,44 @@ EOF
 
 main() {
     local sc_script=""
+    local sc_record_file=""
+    local sc_font_size=16
+    local sc_width=1280
+    local sc_height=720
+    local sc_record_setting=0
+    local sc_record_requested=0
     local arg
-    for arg in "$@"; do
+    while (($#)); do
+        arg="$1"
         case "$arg" in
             --dry-run)     SC_DRY_RUN="all" ;;
             --dry-run=*)   SC_DRY_RUN="${arg#--dry-run=}" ;;
+            --record)
+                sc_record_requested=1
+                if (($# < 2)); then
+                    printf 'Missing output path for --record.\n' >&2
+                    return 2
+                fi
+                sc_record_file="$2"
+                shift
+                ;;
+            --record=*) sc_record_file="${arg#--record=}"; sc_record_requested=1 ;;
+            --font-size|--width|--height)
+                if (($# < 2)); then
+                    printf 'Missing value for %s.\n' "$arg" >&2
+                    return 2
+                fi
+                case "$arg" in
+                    --font-size) sc_font_size="$2" ;;
+                    --width)     sc_width="$2" ;;
+                    --height)    sc_height="$2" ;;
+                esac
+                sc_record_setting=1
+                shift
+                ;;
+            --font-size=*) sc_font_size="${arg#--font-size=}"; sc_record_setting=1 ;;
+            --width=*)     sc_width="${arg#--width=}"; sc_record_setting=1 ;;
+            --height=*)    sc_height="${arg#--height=}"; sc_record_setting=1 ;;
             -h|--help)     usage; return 0 ;;
             -*)
                 printf 'Unknown option: %s\n' "$arg" >&2
@@ -111,6 +148,7 @@ main() {
                 ;;
             *)             sc_script="$arg" ;;
         esac
+        shift
     done
 
     # Validate the dry-run mode (whether it came from the flag or the
@@ -130,6 +168,17 @@ main() {
         return 2
     fi
 
+    if [[ -n "$sc_record_file" ]]; then
+        record_demo "$sc_script" "$sc_record_file" "$sc_font_size" "$sc_width" "$sc_height"
+        return $?
+    elif [[ "$sc_record_requested" -eq 1 ]]; then
+        printf 'Missing output path for --record.\n' >&2
+        return 2
+    elif [[ "$sc_record_setting" -eq 1 ]]; then
+        printf 'Recording options require --record FILE.webm, FILE.mp4, or FILE.gif.\n' >&2
+        return 2
+    fi
+
     clear
     term_setup
     run "$sc_script"
@@ -137,6 +186,219 @@ main() {
     term_restore
     return "$rc"
 }
+
+# Record the existing showcase run in a visible ttyd page. Chrome DevTools
+# captures that page, so recording does not depend on desktop capture APIs.
+record_demo() (
+    local sc_script="$1"
+    local sc_record_file="$2"
+    local sc_font_size="$3"
+    local sc_width="$4"
+    local sc_height="$5"
+    local sc_format="${sc_record_file##*.}"
+    sc_format="${sc_format,,}"
+    local sc_required_encoder=""
+    local sc_ffmpeg="${FFMPEG:-ffmpeg}"
+    local sc_ffmpeg_encoders=""
+    local sc_ffmpeg_filters=""
+    local sc_chrome="${SC_CHROME:-}"
+    local sc_self="${BASH_SOURCE[0]}"
+    local sc_helper
+    local sc_script_path="$sc_script"
+    local sc_tmp=""
+    local sc_ttyd_pid=""
+    local sc_recorder_pid=""
+    local sc_port=""
+    local sc_demo_rc=1
+    local sc_candidate
+
+    record_cleanup() {
+        trap - EXIT INT TERM
+        if [[ -n "$sc_recorder_pid" ]]; then
+            kill -INT "$sc_recorder_pid" 2>/dev/null || true
+            wait "$sc_recorder_pid" 2>/dev/null || true
+        fi
+        if [[ -n "$sc_ttyd_pid" ]]; then
+            kill -TERM "$sc_ttyd_pid" 2>/dev/null || true
+            wait "$sc_ttyd_pid" 2>/dev/null || true
+        fi
+        if [[ -n "$sc_tmp" ]]; then
+            rm -rf -- "$sc_tmp"
+        fi
+    }
+    trap record_cleanup EXIT
+    trap 'exit 130' INT TERM
+
+    case "$sc_format" in
+        webm|mp4|gif) ;;
+        *)
+            printf 'Recording output must end in .webm, .mp4, or .gif: %s\n' "$sc_record_file" >&2
+            return 2
+            ;;
+    esac
+    if [[ -e "$sc_record_file" ]]; then
+        printf 'Recording output already exists: %s\n' "$sc_record_file" >&2
+        return 2
+    fi
+    [[ "$sc_record_file" == /* ]] || sc_record_file="$PWD/$sc_record_file"
+    if [[ ! "$sc_font_size" =~ ^[0-9]+$ ]] || ((10#$sc_font_size < 1)); then
+        printf 'Invalid font size: %s\n' "$sc_font_size" >&2
+        return 2
+    fi
+    if [[ ! "$sc_width" =~ ^[0-9]+$ ]] || ((10#$sc_width < 2)) || ((10#$sc_width % 2)); then
+        printf 'Width must be a positive even number of pixels: %s\n' "$sc_width" >&2
+        return 2
+    fi
+    if [[ ! "$sc_height" =~ ^[0-9]+$ ]] || ((10#$sc_height < 2)) || ((10#$sc_height % 2)); then
+        printf 'Height must be a positive even number of pixels: %s\n' "$sc_height" >&2
+        return 2
+    fi
+    if [[ ! -f "$sc_script_path" ]]; then
+        printf 'Demo script not found: %s\n' "$sc_script" >&2
+        return 2
+    fi
+    for sc_candidate in ttyd node; do
+        if ! command -v "$sc_candidate" >/dev/null 2>&1; then
+            printf 'Recording requires %s in PATH.\n' "$sc_candidate" >&2
+            return 2
+        fi
+    done
+    if ! command -v "$sc_ffmpeg" >/dev/null 2>&1; then
+        printf 'Recording requires FFmpeg in PATH or at the path set by FFMPEG.\n' >&2
+        return 2
+    fi
+    sc_ffmpeg_encoders="$("$sc_ffmpeg" -hide_banner -encoders 2>&1)" || {
+        printf 'Could not inspect FFmpeg encoders. Check that FFmpeg runs correctly.\n' >&2
+        return 2
+    }
+    case "$sc_format" in
+        webm) sc_required_encoder=libvpx-vp9 ;;
+        mp4)  sc_required_encoder=libx264 ;;
+        gif)  sc_required_encoder=ffv1 ;;
+    esac
+    if ! awk -v name="$sc_required_encoder" '$2 == name { found=1 } END { exit !found }' <<<"$sc_ffmpeg_encoders"; then
+        case "$sc_format" in
+            webm) printf 'WebM recording requires FFmpeg with the libvpx-vp9 encoder.\n' >&2 ;;
+            mp4)  printf 'MP4 recording requires FFmpeg with the libx264 encoder. Try a build with H.264 support or choose .webm or .gif.\n' >&2 ;;
+            gif)  printf 'GIF recording requires FFmpeg with the ffv1 encoder.\n' >&2 ;;
+        esac
+        return 2
+    fi
+    if [[ "$sc_format" == gif ]]; then
+        if ! awk '$2 == "gif" { found=1 } END { exit !found }' <<<"$sc_ffmpeg_encoders"; then
+            printf 'GIF recording requires FFmpeg with the gif encoder.\n' >&2
+            return 2
+        fi
+        sc_ffmpeg_filters="$("$sc_ffmpeg" -hide_banner -filters 2>&1)" || {
+            printf 'Could not inspect FFmpeg filters. Check that FFmpeg runs correctly.\n' >&2
+            return 2
+        }
+        if ! awk '$2 == "palettegen" { gen=1 } $2 == "paletteuse" { use=1 } END { exit !(gen && use) }' <<<"$sc_ffmpeg_filters"; then
+            printf 'GIF recording requires FFmpeg with the palettegen and paletteuse filters.\n' >&2
+            return 2
+        fi
+    fi
+    if [[ -z "$sc_chrome" ]]; then
+        for sc_candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$sc_candidate" >/dev/null 2>&1; then
+                sc_chrome="$sc_candidate"
+                break
+            fi
+        done
+    fi
+    if [[ -z "$sc_chrome" ]] || ! command -v "$sc_chrome" >/dev/null 2>&1; then
+        printf 'Recording requires Chrome or Chromium. Set SC_CHROME to its executable path.\n' >&2
+        return 2
+    fi
+
+    while [[ -L "$sc_self" ]]; do
+        if ! command -v readlink >/dev/null 2>&1; then
+            printf 'Recording needs readlink to resolve the showcase.sh symlink.\n' >&2
+            return 2
+        fi
+        local sc_link_dir
+        sc_link_dir="$(cd -P "$(dirname "$sc_self")" && pwd)" || return 1
+        sc_self="$(readlink "$sc_self")"
+        [[ "$sc_self" == /* ]] || sc_self="$sc_link_dir/$sc_self"
+    done
+    sc_self="$(cd -P "$(dirname "$sc_self")" && pwd)/$(basename "$sc_self")"
+    [[ "$sc_script_path" == /* ]] || sc_script_path="$PWD/$sc_script_path"
+    sc_helper="${sc_self%/*}/record.js"
+    if [[ ! -f "$sc_helper" ]]; then
+        printf 'Recording helper not found: %s\n' "$sc_helper" >&2
+        return 2
+    fi
+    sc_tmp="$(mktemp -d)" || {
+        printf 'Could not create a temporary recording directory.\n' >&2
+        return 1
+    }
+    export SC_DRY_RUN
+
+    ttyd --interface 127.0.0.1 --port 0 --once --writable \
+        --client-option "fontSize=$sc_font_size" --cwd "$PWD" \
+        bash -c 'while [[ ! -e "$3" ]]; do sleep 0.05; done; "$1" "$2"; rc=$?; printf "%s\n" "$rc" > "$4.tmp"; mv "$4.tmp" "$4"; exit "$rc"' \
+        _ "$sc_self" "$sc_script_path" "$sc_tmp/ready" "$sc_tmp/status" \
+        >"$sc_tmp/ttyd.log" 2>&1 &
+    sc_ttyd_pid=$!
+
+    local attempt
+    for ((attempt = 0; attempt < 100; attempt++)); do
+        sc_port="$(sed -nE 's/.*[Ll]istening on port: ([0-9]+).*/\1/p' "$sc_tmp/ttyd.log" | tail -n 1)"
+        if [[ "$sc_port" =~ ^[0-9]+$ ]] && ((10#$sc_port > 0)); then
+            break
+        fi
+        if ! kill -0 "$sc_ttyd_pid" 2>/dev/null; then
+            cat "$sc_tmp/ttyd.log" >&2
+            printf 'ttyd stopped before it could start.\n' >&2
+            return 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! "$sc_port" =~ ^[0-9]+$ ]] || ((10#$sc_port < 1)); then
+        cat "$sc_tmp/ttyd.log" >&2
+        printf 'Could not determine the ttyd port.\n' >&2
+        return 1
+    fi
+
+    printf 'Recording to %s. The demo will open in a browser window.\n' "$sc_record_file"
+    node "$sc_helper" "http://127.0.0.1:$sc_port/" "$sc_record_file" \
+        "$sc_font_size" "$sc_width" "$sc_height" "$sc_chrome" \
+        "$sc_tmp/profile" "$sc_tmp/ready" "$sc_format" "$sc_tmp/capture.mkv" >"$sc_tmp/recorder.log" 2>&1 &
+    sc_recorder_pid=$!
+
+    while [[ ! -s "$sc_tmp/status" ]]; do
+        if ! kill -0 "$sc_recorder_pid" 2>/dev/null; then
+            wait "$sc_recorder_pid" 2>/dev/null || true
+            sc_recorder_pid=""
+            cat "$sc_tmp/recorder.log" >&2
+            printf 'The %s recorder stopped before the demo finished.\n' "$sc_format" >&2
+            return 1
+        fi
+        if ! kill -0 "$sc_ttyd_pid" 2>/dev/null; then
+            cat "$sc_tmp/ttyd.log" >&2
+            printf 'ttyd stopped before the demo finished.\n' >&2
+            return 1
+        fi
+        sleep 0.1
+    done
+
+    sc_demo_rc="$(<"$sc_tmp/status")"
+    if [[ ! "$sc_demo_rc" =~ ^[0-9]+$ ]]; then
+        printf 'Invalid demo exit status recorded.\n' >&2
+        return 1
+    fi
+    kill -INT "$sc_recorder_pid" 2>/dev/null || true
+    wait "$sc_recorder_pid"
+    local sc_recorder_rc=$?
+    sc_recorder_pid=""
+    if [[ "$sc_recorder_rc" -ne 0 ]]; then
+        cat "$sc_tmp/recorder.log" >&2
+        printf '%s recording failed.\n' "$sc_format" >&2
+        return 1
+    fi
+    printf 'Saved recording to %s\n' "$sc_record_file"
+    return "$sc_demo_rc"
+)
 
 # Whether execution of visible ('$') commands should be skipped in dry-run.
 dry_run_skip_visible() {
